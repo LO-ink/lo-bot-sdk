@@ -14,7 +14,7 @@ This initial client surface is not the complete server API. Media, callbacks, ma
 ## Usage
 
 ```ts
-import { createBotClient, type BotTransport } from '@lo/bot-sdk';
+import { createBotClient, type BotTransport } from "@lo/bot-sdk";
 
 export async function identifyBot(transport: BotTransport) {
   const bot = createBotClient(transport, { timeoutMs: 35_000 });

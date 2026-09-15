@@ -1,62 +1,208 @@
-import { BotError } from './errors.js';
-import type { BotCommand, BotOperations, BotTransport, Identifier, RequestOptions } from './types.js';
+import { BotError } from "./errors.js";
+import type {
+  BotCommand,
+  BotOperations,
+  BotTransport,
+  Identifier,
+  RequestOptions,
+} from "./types.js";
 
-function id(value: string): void {
-  if (typeof value !== 'string' || !/^-?[1-9][0-9]*$/.test(value)) throw new BotError('invalid-input', 'Expected a non-zero decimal identifier.');
+function id(value: string, positive = false): void {
+  const pattern = positive ? /^[1-9][0-9]*$/ : /^-?[1-9][0-9]*$/;
+  if (typeof value !== "string" || !pattern.test(value))
+    throw new BotError("invalid-input", "Expected a valid decimal identifier.");
 }
 function text(value: string): void {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 4096) throw new BotError('invalid-input', 'Expected text between 1 and 4096 UTF-16 units.');
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    Array.from(value).length > 4096
+  )
+    throw new BotError(
+      "invalid-input",
+      "Expected text between 1 and 4096 Unicode code points.",
+    );
+}
+function object(value: unknown): void {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new BotError("invalid-input", "Expected an input object.");
+}
+function validTimeout(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 2_147_483_647;
 }
 
 /** Create a client over an explicitly chosen transport. Credentials stay in the transport. */
-export function createBotClient(transport: BotTransport, options: { timeoutMs?: number } = {}) {
+export function createBotClient(
+  transport: BotTransport,
+  options: { timeoutMs?: number } = {},
+) {
+  object(options);
+  if (!transport || typeof transport.execute !== "function")
+    throw new BotError("invalid-input", "Expected a bot transport.");
   const defaultTimeout = options.timeoutMs ?? 35_000;
-  if (!Number.isFinite(defaultTimeout) || defaultTimeout <= 0) throw new BotError('invalid-input', 'timeoutMs must be positive and finite.');
-  function request<K extends keyof BotOperations>(operation: K, input: BotOperations[K]['input'], requestOptions: RequestOptions = {}): Promise<BotOperations[K]['output']> {
+  if (!validTimeout(defaultTimeout))
+    throw new BotError(
+      "invalid-input",
+      "timeoutMs must be an integer between 1 and 2147483647.",
+    );
+  async function request<K extends keyof BotOperations>(
+    operation: K,
+    input: BotOperations[K]["input"],
+    requestOptions: RequestOptions = {},
+  ): Promise<BotOperations[K]["output"]> {
+    object(requestOptions);
     const timeout = requestOptions.timeoutMs ?? defaultTimeout;
-    if (!Number.isFinite(timeout) || timeout <= 0) return Promise.reject(new BotError('invalid-input', 'timeoutMs must be positive and finite.'));
-    if (requestOptions.signal?.aborted) return Promise.reject(new BotError('aborted', 'Request aborted.'));
+    if (!validTimeout(timeout))
+      throw new BotError(
+        "invalid-input",
+        "timeoutMs must be an integer between 1 and 2147483647.",
+      );
+    if (requestOptions.signal?.aborted)
+      return Promise.reject(new BotError("aborted", "Request aborted."));
     return new Promise((resolve, reject) => {
       const controller = new AbortController();
       let settled = false;
-      const finish = (result: { ok: true; value: BotOperations[K]['output'] } | { ok: false; error: unknown }) => {
+      const finish = (
+        result:
+          | { ok: true; value: BotOperations[K]["output"] }
+          | { ok: false; error: unknown },
+      ) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        requestOptions.signal?.removeEventListener('abort', cancel);
-        if (!result.ok) reject(result.error instanceof BotError ? result.error : new BotError('transport', 'Bot transport failed.'));
+        requestOptions.signal?.removeEventListener("abort", cancel);
+        if (!result.ok)
+          reject(
+            result.error instanceof BotError
+              ? result.error
+              : new BotError("transport", "Bot transport failed."),
+          );
         else resolve(result.value);
       };
-      const cancel = () => { finish({ ok: false, error: new BotError('aborted', 'Request aborted.') }); controller.abort(); };
-      const timer = setTimeout(() => { finish({ ok: false, error: new BotError('timeout', 'Request timed out.') }); controller.abort(); }, timeout);
-      requestOptions.signal?.addEventListener('abort', cancel, { once: true });
-      if (requestOptions.signal?.aborted) { cancel(); return; }
-      try { void transport.execute(operation, input, { signal: controller.signal }).then(value => finish({ ok: true, value }), error => finish({ ok: false, error })); }
-      catch (error) { finish({ ok: false, error }); }
+      const cancel = () => {
+        finish({
+          ok: false,
+          error: new BotError("aborted", "Request aborted."),
+        });
+        controller.abort();
+      };
+      const timer = setTimeout(() => {
+        finish({
+          ok: false,
+          error: new BotError("timeout", "Request timed out."),
+        });
+        controller.abort();
+      }, timeout);
+      requestOptions.signal?.addEventListener("abort", cancel, { once: true });
+      if (requestOptions.signal?.aborted) {
+        cancel();
+        return;
+      }
+      try {
+        void transport
+          .execute(operation, input, { signal: controller.signal })
+          .then(
+            (value) => finish({ ok: true, value }),
+            (error) => finish({ ok: false, error }),
+          );
+      } catch (error) {
+        finish({ ok: false, error });
+      }
     });
   }
   return {
     /** Fetch the authenticated bot identity. */
-    getIdentity: (options?: RequestOptions) => request('getIdentity', undefined, options),
+    getIdentity: (options?: RequestOptions) =>
+      request("getIdentity", undefined, options),
     /** Send one plain-text message. Retrying can create another message. */
-    sendMessage(input: BotOperations['sendMessage']['input'], options?: RequestOptions) { id(input.conversationId); text(input.text); return request('sendMessage', input, options); },
+    async sendMessage(
+      input: BotOperations["sendMessage"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      text(input.text);
+      return request("sendMessage", input, options);
+    },
     /** Replace the text of one stored message. */
-    editMessage(input: BotOperations['editMessage']['input'], options?: RequestOptions) { id(input.conversationId); id(input.messageId); text(input.text); return request('editMessage', input, options); },
+    async editMessage(
+      input: BotOperations["editMessage"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      id(input.messageId, true);
+      text(input.text);
+      return request("editMessage", input, options);
+    },
     /** Delete one stored message. */
-    deleteMessage(input: { conversationId: Identifier; messageId: Identifier }, options?: RequestOptions) { id(input.conversationId); id(input.messageId); return request('deleteMessage', input, options); },
+    async deleteMessage(
+      input: { conversationId: Identifier; messageId: Identifier },
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      id(input.messageId, true);
+      return request("deleteMessage", input, options);
+    },
     /** Read configured commands. */
-    getCommands: (options?: RequestOptions) => request('getCommands', undefined, options),
+    getCommands: (options?: RequestOptions) =>
+      request("getCommands", undefined, options),
     /** Replace configured commands. An empty array removes them. */
-    setCommands(commands: readonly BotCommand[], options?: RequestOptions) {
-      if (!Array.isArray(commands) || commands.length > 100 || new Set(commands.map(x => x.name)).size !== commands.length || commands.some(x => !/^[a-z0-9_]{1,32}$/.test(x.name) || typeof x.description !== 'string' || !x.description.trim() || x.description.length > 256)) throw new BotError('invalid-input', 'Expected up to 100 unique commands with names and descriptions.');
-      return request('setCommands', { commands }, options);
+    async setCommands(
+      commands: readonly BotCommand[],
+      options?: RequestOptions,
+    ) {
+      if (
+        !Array.isArray(commands) ||
+        commands.length > 100 ||
+        commands.some(
+          (x) =>
+            !x ||
+            typeof x.name !== "string" ||
+            !/^[a-z0-9_]{1,32}$/.test(x.name) ||
+            typeof x.description !== "string" ||
+            !x.description.trim() ||
+            Array.from(x.description).length > 256,
+        ) ||
+        new Set(commands.map((x) => x.name)).size !== commands.length
+      )
+        throw new BotError(
+          "invalid-input",
+          "Expected up to 100 unique commands with names and descriptions.",
+        );
+      return request("setCommands", { commands }, options);
     },
     /** Read updates. Advance offset only after durable processing of an update. */
-    getUpdates(input: BotOperations['getUpdates']['input'] = {}, options?: RequestOptions) {
-      if (input.offset !== undefined && !/^[0-9]+$/.test(input.offset)) throw new BotError('invalid-input', 'offset must be a non-negative decimal identifier.');
-      if (input.limit !== undefined && (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) throw new BotError('invalid-input', 'limit must be between 1 and 100.');
-      if (input.waitSeconds !== undefined && (!Number.isInteger(input.waitSeconds) || input.waitSeconds < 0 || input.waitSeconds > 30)) throw new BotError('invalid-input', 'waitSeconds must be between 0 and 30.');
-      return request('getUpdates', input, options);
+    async getUpdates(
+      input: BotOperations["getUpdates"]["input"] = {},
+      options?: RequestOptions,
+    ) {
+      object(input);
+      if (
+        input.offset !== undefined &&
+        (typeof input.offset !== "string" || !/^[0-9]+$/.test(input.offset))
+      )
+        throw new BotError(
+          "invalid-input",
+          "offset must be a non-negative decimal identifier.",
+        );
+      if (
+        input.limit !== undefined &&
+        (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)
+      )
+        throw new BotError("invalid-input", "limit must be between 1 and 100.");
+      if (
+        input.waitSeconds !== undefined &&
+        (!Number.isInteger(input.waitSeconds) ||
+          input.waitSeconds < 0 ||
+          input.waitSeconds > 30)
+      )
+        throw new BotError(
+          "invalid-input",
+          "waitSeconds must be between 0 and 30.",
+        );
+      return request("getUpdates", input, options);
     },
   };
 }

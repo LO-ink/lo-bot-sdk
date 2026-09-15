@@ -160,6 +160,26 @@ test("deadlines are bounded integers without timer overflow", async () => {
     "1",
   );
 });
+
+test("invalid cancellation signals reject before reaching transport", async () => {
+  const client = createBotClient({
+    execute() {
+      assert.fail("must not run");
+    },
+  });
+  for (const signal of [
+    null,
+    {},
+    true,
+    { aborted: false },
+    { aborted: "false", addEventListener() {}, removeEventListener() {} },
+  ]) {
+    await assert.rejects(
+      client.getIdentity({ signal }),
+      (error) => error instanceof BotError && error.code === "invalid-input",
+    );
+  }
+});
 test("text limits count Unicode code points", async () => {
   const client = createBotClient({
     async execute(_operation, input) {

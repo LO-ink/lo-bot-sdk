@@ -51,6 +51,17 @@ export function createBotClient(
     requestOptions: RequestOptions = {},
   ): Promise<BotOperations[K]["output"]> {
     object(requestOptions);
+    const signal = requestOptions.signal;
+    if (
+      signal !== undefined &&
+      (signal === null ||
+        typeof signal !== "object" ||
+        typeof signal.aborted !== "boolean" ||
+        typeof signal.addEventListener !== "function" ||
+        typeof signal.removeEventListener !== "function")
+    ) {
+      throw new BotError("invalid-input", "Expected an AbortSignal.");
+    }
     const timeout = requestOptions.timeoutMs ?? defaultTimeout;
     if (!validTimeout(timeout))
       throw new BotError(

@@ -201,3 +201,46 @@ test("text limits count Unicode code points", async () => {
     (e) => e.code === "invalid-input",
   );
 });
+
+test("caller option changes cannot detach cancellation from the original signal", async () => {
+  const controller = new AbortController();
+  let removed = 0;
+  const remove = controller.signal.removeEventListener.bind(controller.signal);
+  controller.signal.removeEventListener = (...args) => {
+    removed++;
+    remove(...args);
+  };
+  let resolve;
+  const client = createBotClient({
+    execute: () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  });
+  const options = { signal: controller.signal };
+  const pending = client.getIdentity(options);
+  options.signal = {
+    removeEventListener() {
+      throw new Error("reused options");
+    },
+  };
+  resolve({ id: "1", name: "Bot" });
+  assert.equal((await pending).id, "1");
+  assert.equal(removed, 1);
+});
+
+test("listener cleanup failure cannot leave the request pending", async () => {
+  const controller = new AbortController();
+  controller.signal.removeEventListener = () => {
+    throw new Error("cleanup");
+  };
+  const client = createBotClient({
+    async execute() {
+      return { id: "1", name: "Bot" };
+    },
+  });
+  assert.equal(
+    (await client.getIdentity({ signal: controller.signal })).id,
+    "1",
+  );
+});

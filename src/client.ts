@@ -68,7 +68,7 @@ export function createBotClient(
         "invalid-input",
         "timeoutMs must be an integer between 1 and 2147483647.",
       );
-    if (requestOptions.signal?.aborted)
+    if (signal?.aborted)
       return Promise.reject(new BotError("aborted", "Request aborted."));
     return new Promise((resolve, reject) => {
       const controller = new AbortController();
@@ -81,7 +81,11 @@ export function createBotClient(
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        requestOptions.signal?.removeEventListener("abort", cancel);
+        try {
+          signal?.removeEventListener("abort", cancel);
+        } catch {
+          /* Preserve request settlement. */
+        }
         if (!result.ok)
           reject(
             result.error instanceof BotError
@@ -104,8 +108,13 @@ export function createBotClient(
         });
         controller.abort();
       }, timeout);
-      requestOptions.signal?.addEventListener("abort", cancel, { once: true });
-      if (requestOptions.signal?.aborted) {
+      try {
+        signal?.addEventListener("abort", cancel, { once: true });
+      } catch (error) {
+        finish({ ok: false, error });
+        return;
+      }
+      if (signal?.aborted) {
         cancel();
         return;
       }

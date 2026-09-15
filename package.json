@@ -1,5 +1,5 @@
 {
-  "name": "@lo/bot-sdk",
+  "name": "@lo-ink/bot-sdk",
   "version": "0.1.0",
   "description": "Typed server-side bot client for LO",
   "type": "module",

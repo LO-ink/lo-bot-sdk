@@ -45,6 +45,8 @@ try {
   const packed = JSON.parse(
     run("npm", ["pack", "--json", "--cache", join(temp, "cache")], source),
   )[0];
+  assert.equal(packed.name, "@lo-ink/bot-sdk");
+  assert.equal(packed.version, "0.1.0");
   assert.ok(packed.files.some((file) => file.path === "dist/index.js"));
   assert.ok(packed.files.some((file) => file.path === "dist/index.d.ts"));
   await writeFile(
@@ -67,6 +69,7 @@ try {
   const name = JSON.parse(
     await readFile(join(source, "package.json"), "utf8"),
   ).name;
+  assert.equal(name, "@lo-ink/bot-sdk");
   await writeFile(
     join(consumer, "check.mjs"),
     `import { createBotClient } from '${name}';\nconst client = createBotClient({async execute() { return {id: '1', name: 'Example'}; }});\nif ((await client.getIdentity()).id !== '1') throw new Error('Package import failed');\n`,

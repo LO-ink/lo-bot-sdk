@@ -244,3 +244,37 @@ test("listener cleanup failure cannot leave the request pending", async () => {
     "1",
   );
 });
+
+test("signal registration races release listeners without starting host work", async () => {
+  let starts = 0;
+  for (const start of [
+    (signal) =>
+      createBotClient({
+        execute: () => {
+          starts++;
+          return Promise.resolve();
+        },
+      }).getIdentity({ signal }),
+  ]) {
+    for (const mode of ["throw", "cancel"]) {
+      let installed = false;
+      let removed = 0;
+      const signal = {
+        get aborted() {
+          if (installed && mode === "throw") throw new Error("signal read");
+          return false;
+        },
+        addEventListener(_event, listener) {
+          installed = true;
+          if (mode === "cancel") listener();
+        },
+        removeEventListener() {
+          removed++;
+        },
+      };
+      await assert.rejects(start(signal));
+      assert.equal(removed, 1);
+    }
+  }
+  assert.equal(starts, 0);
+});

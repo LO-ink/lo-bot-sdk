@@ -110,12 +110,13 @@ export function createBotClient(
       }, timeout);
       try {
         signal?.addEventListener("abort", cancel, { once: true });
+        if (settled) return;
+        if (signal?.aborted) {
+          cancel();
+          return;
+        }
       } catch (error) {
         finish({ ok: false, error });
-        return;
-      }
-      if (signal?.aborted) {
-        cancel();
         return;
       }
       try {

@@ -19,6 +19,7 @@ export interface BotCommand {
 }
 /** A normalized update. Unrecognized updates retain their cursor without exposing an untyped payload. */
 export type BotUpdate =
+  | import("./secretary.js").SecretaryUpdate
   | {
       readonly id: Identifier;
       readonly kind: "message";

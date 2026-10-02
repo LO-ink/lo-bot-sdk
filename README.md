@@ -9,7 +9,7 @@ A typed server-side bot client. The client owns input validation, deadlines and 
 - Replace the command list.
 - Poll normalized updates with an explicit processing cursor.
 
-This initial client surface is not the complete server API. Media, callbacks, markup and webhook handling require subsequent typed modules. Unrecognized polled updates are represented as `kind: 'unhandled'` with their cursor; callers must decide how to handle them before advancing the offset.
+The client surface is not the complete server API. Ordinary media, callbacks and markup require subsequent typed modules. The LO HTTP adapter provides lossless webhook parsing; the application must authenticate each webhook first. Unrecognized polled updates are represented as `kind: 'unhandled'` with their cursor; callers must decide how to handle them before advancing the offset.
 
 ## Usage
 
@@ -39,3 +39,120 @@ npm pack --dry-run
 ```
 
 Transport integration and upstream-library compatibility are maintained in [lo-platform-adapters](https://github.com/lo-ink/lo-platform-adapters). Their test results are separate from this client's unit tests.
+
+## LO-native secretary extension (0.2)
+
+`createSecretaryClient` uses a separate `SecretaryTransport` extension. Existing
+ordinary transports continue implementing `BotTransport` alone. Normalized
+`BotUpdate` now also includes `secretary_connection`, `secretary_message`,
+`secretary_message_edited` and `secretary_messages_deleted`; update exhaustive
+switches when upgrading from 0.1.
+
+Enable the bot's secretary capability explicitly in LO bot management. A human
+owner must then select that bot, permitted private chats, and individual rights
+and save consent. Capability alone grants no access. The six rights are
+independent: receiving does not mark a message read, and sending does not permit
+editing or deleting. `deleteAll: true` requires the separately granted destructive
+right; it is never inferred from `delete_sent`.
+
+```ts
+import {
+  createSecretaryClient,
+  type SecretaryTransport,
+  type SecretaryUpdate,
+} from "@lo-ink/bot-sdk";
+
+export async function reply(
+  transport: SecretaryTransport,
+  update: SecretaryUpdate,
+  requestId: string,
+) {
+  if (update.kind !== "secretary_message" || update.message.secretaryBotId)
+    return;
+  const secretary = createSecretaryClient(transport);
+  const connection = await secretary.getConnection(update.message.connectionId);
+  if (
+    !connection.enabled ||
+    connection.policyVersion !== update.context.policyVersion ||
+    !connection.rights.includes("send_messages")
+  )
+    return;
+  return secretary.sendText({
+    connectionId: connection.id,
+    context: update.context,
+    requestId, // Persist before sending; reuse the same key and body on uncertainty.
+    text: "Your message was received.",
+  });
+}
+```
+
+The server rechecks current consent, token generation, chat scope, source revision,
+manual takeover and the 24-hour incoming window at every action. A cached
+connection never authorizes a write. Use context exactly as delivered: its
+`conversationId` is the messenger conversation, while `chatId` and a normalized
+message's `conversationId` identify the other human. Never substitute one for the
+other or send an owner ID or token generation as a grant.
+
+State must be isolated by bot ID + connection ID + chat ID. Deduplicate events
+with their stable `eventId`, not polling cursor alone. Do not reply to delegated
+messages or human owner echoes. Pause, revoke, edit/delete of the source, policy
+changes and token rotation invalidate old work. Receiving and actions provide
+new events only, with no history export. Credentials stay on the server.
+
+Calls never retry automatically. A timeout or transport error may mean the
+server already committed. Retry only the exact stored request ID/context/body;
+never generate a replacement key. `BotError.code` classifies `forbidden`,
+`conflict`, `invalid-input`, `rate-limited`, `timeout`, `aborted` and transport
+failures. Respect `retryAfterSeconds`; do not log upstream bodies or credentials.
+
+The [LO HTTP adapter and no-AI reference bot](https://github.com/lo-ink/lo-platform-adapters/tree/main/examples/secretary)
+show polling and authenticated webhooks, private durable state, replay handling,
+revoke and explicit per-chat auto opt-in. This is LO-native delegation: familiar
+business wire names do not imply Telegram accounts, Telegram profile permissions,
+history access, money/gifts, or a Telegram connector. AI is not enabled.
+
+Secretary messages may include `caption`, `attachments`, `albumId` and
+`mediaStatus`. Supported incoming files use `secretary-v1` read capabilities
+bound to their connection, chat, policy and exact source revision. `getFile(fileId)`
+returns a relative `path` and `expiresAt`; download from the Bot API's authenticated
+`/file/bot<TOKEN>/<path>` route. Each GET checks current consent again. URLs last
+five minutes and downloads are capped at 50 MiB. File references cannot be used as
+ordinary bot media grants. `unsupported` and `unavailable` media statuses carry no
+usable file grant. The reference bot deliberately answers text only.
+
+`sendText` accepts an optional `quote: { text, offsetUtf16 }`, selecting at most
+1024 UTF-16 units of the **exact source message**. The server checks the fragment
+and source revision; another message or chat cannot be used as a quote source.
+The returned message exposes `replyToMessageId` and `quote`.
+
+`sendMedia({ ...action, fileIds, caption?, quote? })` reuses 1..10 distinct scoped
+file references from that same source. Its LO `sendBusinessMedia` wire method
+checks both current receive and send consent before writing the reply. Photos,
+audio and video may share one native album; documents form a separate album.
+Voice is sent alone without a caption. Captions are limited to 1024 UTF-16 units.
+The result keeps the human `senderId`, `secretaryBotId`, `mediaFileIds`, caption
+and album ID. It accepts no arbitrary URL, uploaded file, ordinary file ID or
+expiring download path. There is no grant to browse the owner's media library.
+Reuse the exact request ID/body after an uncertain outcome. The native reply
+store currently limits source IDs for sending to positive int32; larger IDs
+receive a typed unsupported response.
+
+### Review drafts and owner-controlled automatic templates
+
+`client.proposeDraft({ connection, requestId, text, reason: 'template' })`
+creates a text draft bound to the delivered source/context. Reasons are
+`template`, `manual_review`, or `cannot_answer`; text is at most 4096 UTF-16
+units. The receipt carries draft ID, revision, state, mode and expiry. Retry an
+uncertain result with the same request ID and identical input.
+
+Review is the default for this proposal workflow. Only the human owner can
+approve/cancel drafts or enable a separate per-chat automatic rule in LO.
+Automatic mode requires the exact stored template, selected days/hours/timezone
+and cooldown. `cannot_answer` always needs review. Revocation, source changes,
+a newer incoming message and the owner's manual reply cancel pending drafts.
+Once a source has a draft, `sendText` cannot bypass its approval.
+
+The existing direct send methods remain available under the owner's explicit
+`send_messages` permission for sources without a draft. SDK settings and bot
+payloads cannot authorize an automatic rule. This reference workflow has no AI
+provider or model calls.

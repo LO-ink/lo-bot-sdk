@@ -11,6 +11,61 @@ export interface Message {
   readonly id: Identifier;
   readonly conversationId: Identifier;
   readonly text?: string;
+  readonly caption?: string;
+  /** Reusable reference belonging to this bot; cache after a successful upload. */
+  readonly fileId?: string;
+}
+/** Exactly one action per button, using the Bot API's keyboard shape. */
+export type InlineKeyboardButton = { readonly text: string } & (
+  | {
+      readonly url: string;
+      readonly callback_data?: never;
+      readonly web_app?: never;
+    }
+  | {
+      readonly callback_data: string;
+      readonly url?: never;
+      readonly web_app?: never;
+    }
+  | {
+      readonly web_app: { readonly url: string };
+      readonly url?: never;
+      readonly callback_data?: never;
+    }
+);
+export interface InlineKeyboard {
+  readonly inline_keyboard: readonly (readonly InlineKeyboardButton[])[];
+}
+export interface ReplyKeyboard {
+  readonly keyboard: readonly (readonly {
+    readonly text: string;
+    readonly web_app?: { readonly url: string };
+  }[])[];
+  readonly resize_keyboard?: boolean;
+  readonly one_time_keyboard?: boolean;
+  readonly is_persistent?: boolean;
+  readonly selective?: boolean;
+  readonly input_field_placeholder?: string;
+}
+export type ReplyMarkup = InlineKeyboard | ReplyKeyboard;
+export type ChatMenuButton =
+  | {
+      readonly type: "web_app";
+      readonly text: string;
+      readonly web_app: { readonly url: string };
+    }
+  | { readonly type: "commands" | "default" };
+export type InputFile =
+  | { readonly fileId: string; readonly data?: never }
+  | {
+      readonly data: Uint8Array | Blob | ReadableStream<Uint8Array>;
+      readonly name: string;
+      readonly mime?: string;
+      readonly fileId?: never;
+    };
+export interface MediaInput {
+  conversationId: Identifier;
+  replyMarkup?: ReplyMarkup;
 }
 /** Command displayed by the client, without a slash prefix. */
 export interface BotCommand {
@@ -30,15 +85,40 @@ export type BotUpdate =
 export interface BotOperations {
   getIdentity: { input: undefined; output: BotIdentity };
   sendMessage: {
-    input: { conversationId: Identifier; text: string };
+    input: {
+      conversationId: Identifier;
+      text: string;
+      replyMarkup?: ReplyMarkup;
+    };
     output: Message;
   };
   editMessage: {
-    input: { conversationId: Identifier; messageId: Identifier; text: string };
+    input: {
+      conversationId: Identifier;
+      messageId: Identifier;
+      text: string;
+      replyMarkup?: ReplyMarkup;
+    };
     output: Message;
   };
   deleteMessage: {
     input: { conversationId: Identifier; messageId: Identifier };
+    output: boolean;
+  };
+  sendPhoto: {
+    input: MediaInput & { photo: InputFile; caption?: string };
+    output: Message & { readonly fileId: string };
+  };
+  sendDocument: {
+    input: MediaInput & { document: InputFile; caption?: string };
+    output: Message & { readonly fileId: string };
+  };
+  sendVoice: {
+    input: MediaInput & { voice: InputFile };
+    output: Message & { readonly fileId: string };
+  };
+  setChatMenuButton: {
+    input: { conversationId?: Identifier; menuButton: ChatMenuButton };
     output: boolean;
   };
   getCommands: { input: undefined; output: readonly BotCommand[] };

@@ -1,6 +1,6 @@
 {
   "name": "@lo-ink/bot-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Typed server-side bot client for LO",
   "type": "module",
   "license": "MIT",
@@ -18,7 +18,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22"

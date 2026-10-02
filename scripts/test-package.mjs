@@ -46,7 +46,7 @@ try {
     run("npm", ["pack", "--json", "--cache", join(temp, "cache")], source),
   )[0];
   assert.equal(packed.name, "@lo-ink/bot-sdk");
-  assert.equal(packed.version, "0.1.0");
+  assert.equal(packed.version, "0.2.0");
   assert.ok(packed.files.some((file) => file.path === "dist/index.js"));
   assert.ok(packed.files.some((file) => file.path === "dist/index.d.ts"));
   await writeFile(
@@ -77,7 +77,7 @@ try {
   run(process.execPath, ["check.mjs"], consumer);
   await writeFile(
     join(consumer, "check.ts"),
-    `import { createBotClient, type BotTransport, type Message } from '${name}';\ndeclare const transport: BotTransport;\nconst message: Promise<Message> = createBotClient(transport).sendMessage({conversationId:'1', text:'Hello'});\nvoid message;\n`,
+    `import { createBotClient, type BotTransport, type Message, createSecretaryClient, type SecretaryTransport, type SecretaryContext } from '${name}';\ndeclare const transport: BotTransport;\nconst message: Promise<Message> = createBotClient(transport).sendMessage({conversationId:'1', text:'Hello'});\nvoid message;\ndeclare const secretaryTransport: SecretaryTransport;\ndeclare const context: SecretaryContext;\nconst secretaryReply: Promise<Message> = createSecretaryClient(secretaryTransport).sendText({connectionId:'e8b392e9-4ddc-4992-a235-d9f36cd892fc', context, requestId:'stable-request-id', text:'Answer'});\nvoid secretaryReply;\n`,
   );
   for (const resolution of ["NodeNext", "Bundler"]) {
     run(

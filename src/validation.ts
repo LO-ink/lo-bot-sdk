@@ -190,12 +190,14 @@ export function validateInputFile(
         : undefined;
   if (size !== undefined && size > BOT_MEDIA_LIMITS[`${kind}Bytes`])
     fail("File exceeds the LO upload limit.");
+  const effectiveMime =
+    file.mime ?? (data instanceof Blob && data.type ? data.type : undefined);
   if (
     kind === "voice" &&
     (!/\.(?:m4a|mp4|aac)$/i.test(file.name) ||
-      (file.mime !== undefined &&
+      (effectiveMime !== undefined &&
         !["audio/mp4", "video/mp4", "audio/aac", "audio/x-m4a"].includes(
-          file.mime as string,
+          effectiveMime as string,
         )))
   )
     fail(

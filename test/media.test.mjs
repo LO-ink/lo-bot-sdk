@@ -77,3 +77,43 @@ test("menu text accepts 64 Unicode code points and rejects the next one before t
   );
   assert.equal(calls, 1);
 });
+
+test("voice validation uses Blob MIME unless explicitly overridden, before transport", async () => {
+  let calls = 0;
+  const bot = createBotClient({
+    execute: async () => {
+      calls++;
+      return { id: "1", conversationId: "42", fileId: "fixture" };
+    },
+  });
+  for (const type of ["audio/ogg", "audio/opus", "application/octet-stream"]) {
+    await assert.rejects(
+      bot.sendVoice({
+        conversationId: "42",
+        voice: { data: new Blob(["fixture"], { type }), name: "voice.m4a" },
+      }),
+      (e) => e.code === "invalid-input",
+    );
+  }
+  assert.equal(calls, 0);
+  await bot.sendVoice({
+    conversationId: "42",
+    voice: {
+      data: new Blob(["fixture"], { type: "audio/mp4" }),
+      name: "voice.m4a",
+    },
+  });
+  await bot.sendVoice({
+    conversationId: "42",
+    voice: {
+      data: new Blob(["fixture"], { type: "application/octet-stream" }),
+      name: "voice.aac",
+      mime: "audio/aac",
+    },
+  });
+  await bot.sendVoice({
+    conversationId: "42",
+    voice: { data: new Blob(["fixture"]), name: "voice.aac" },
+  });
+  assert.equal(calls, 3);
+});

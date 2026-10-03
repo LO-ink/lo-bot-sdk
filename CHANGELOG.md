@@ -6,3 +6,4 @@
 - Added pre-transport keyboard, caption, file size, URL and voice-format validation.
 - Added RateLimited, NotAllowed, BadRequest, Unavailable, BotApiError and platform limit constants.
 - Existing BotError codes and retryAfterSeconds remain compatible. Mutations are never automatically retried.
+- Validate the effective MIME of voice Blobs before transport, including inferred MIME types and explicit overrides.

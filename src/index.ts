@@ -29,3 +29,28 @@ export type {
   Message,
   RequestOptions,
 } from "./types.js";
+
+export {
+  BotApiError,
+  RateLimited,
+  NotAllowed,
+  BadRequest,
+  Unavailable,
+} from "./errors.js";
+export {
+  BOT_SEND_LIMITS,
+  BOT_MEDIA_LIMITS,
+  validateReplyMarkup,
+  validateInputFile,
+  validateCaption,
+  validateMenuButton,
+} from "./validation.js";
+export type {
+  InlineKeyboardButton,
+  InlineKeyboard,
+  ReplyKeyboard,
+  ReplyMarkup,
+  ChatMenuButton,
+  InputFile,
+  MediaInput,
+} from "./types.js";

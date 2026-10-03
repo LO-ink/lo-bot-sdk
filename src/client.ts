@@ -1,4 +1,10 @@
 import { createOperationRequester } from "./request.js";
+import {
+  validateReplyMarkup,
+  validateMenuButton,
+  validateInputFile,
+  validateCaption,
+} from "./validation.js";
 import { BotError } from "./errors.js";
 import type {
   BotCommand,
@@ -46,6 +52,7 @@ export function createBotClient(
       object(input);
       id(input.conversationId);
       text(input.text);
+      validateReplyMarkup(input.replyMarkup, input.conversationId);
       return request("sendMessage", input, options);
     },
     /** Replace the text of one stored message. */
@@ -57,7 +64,54 @@ export function createBotClient(
       id(input.conversationId);
       id(input.messageId, true);
       text(input.text);
+      validateReplyMarkup(input.replyMarkup, input.conversationId);
       return request("editMessage", input, options);
+    },
+    async sendPhoto(
+      input: BotOperations["sendPhoto"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId);
+      validateCaption(input.caption);
+      validateInputFile(input.photo, "photo");
+      return request("sendPhoto", input, options);
+    },
+    async sendDocument(
+      input: BotOperations["sendDocument"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId);
+      validateCaption(input.caption);
+      validateInputFile(input.document, "document");
+      return request("sendDocument", input, options);
+    },
+    async sendVoice(
+      input: BotOperations["sendVoice"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId);
+      validateInputFile(input.voice, "voice");
+      if (Object.hasOwn(input, "caption"))
+        throw new BotError(
+          "invalid-input",
+          "LO voice messages do not support captions.",
+        );
+      return request("sendVoice", input, options);
+    },
+    async setChatMenuButton(
+      input: BotOperations["setChatMenuButton"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      if (input.conversationId !== undefined) id(input.conversationId, true);
+      validateMenuButton(input.menuButton);
+      return request("setChatMenuButton", input, options);
     },
     /** Delete one stored message. */
     async deleteMessage(

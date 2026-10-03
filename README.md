@@ -6,10 +6,12 @@ A typed server-side bot client. The client owns input validation, deadlines and 
 
 - Read bot identity and configured commands.
 - Send, edit and delete plain-text messages.
+- Send photos, documents and AAC voice messages by upload or cached file ID.
+- Open registered mini-apps through typed keyboards and chat menu buttons.
 - Replace the command list.
 - Poll normalized updates with an explicit processing cursor.
 
-The client surface is not the complete server API. Ordinary media, callbacks and markup require subsequent typed modules. The LO HTTP adapter provides lossless webhook parsing; the application must authenticate each webhook first. Unrecognized polled updates are represented as `kind: 'unhandled'` with their cursor; callers must decide how to handle them before advancing the offset.
+The client surface is not the complete server API. Callback acknowledgement and some advanced server methods are outside this client surface. The LO HTTP adapter provides lossless webhook parsing; the application must authenticate each webhook first. Unrecognized polled updates are represented as `kind: 'unhandled'` with their cursor; callers must decide how to handle them before advancing the offset.
 
 ## Usage
 
@@ -156,3 +158,79 @@ The existing direct send methods remain available under the owner's explicit
 `send_messages` permission for sources without a draft. SDK settings and bot
 payloads cannot authorize an automatic rule. This reference workflow has no AI
 provider or model calls.
+
+## Open a mini-app from a bot
+
+Requires `@lo-ink/bot-http-lo` 0.3.0 or a transport implementing the new operations.
+
+```ts
+await bot.sendMessage({
+  conversationId: verifiedUserId,
+  text: "Пора сыграть!",
+  replyMarkup: {
+    inline_keyboard: [
+      [
+        {
+          text: "Открыть",
+          web_app: { url: registeredAppUrl },
+        },
+      ],
+    ],
+  },
+});
+await bot.setChatMenuButton({
+  menuButton: {
+    type: "web_app",
+    text: "Открыть",
+    web_app: { url: registeredAppUrl },
+  },
+});
+```
+
+`registeredAppUrl` must match the LO Connect URL **byte for byte**, including query
+and trailing slash, to receive registered signed launch data. Web App buttons
+require HTTPS and a private chat; reply-keyboard Web App URLs are limited to 512
+UTF-8 bytes. Inline keyboards support `url`, `callback_data` (1–64 bytes) and
+`web_app`. `replyMarkup` is optional on text edits and all media sends.
+
+## Upload once, reuse a file
+
+```ts
+const sent = await bot.sendPhoto({
+  conversationId: verifiedUserId,
+  photo: { data: bytes, name: "result.png", mime: "image/png" },
+  caption: "Ваш результат",
+  replyMarkup,
+});
+await bot.sendPhoto({
+  conversationId: verifiedUserId,
+  photo: { fileId: sent.fileId },
+});
+```
+
+`InputFile` accepts `{ fileId }` or `{ data: Uint8Array | Blob | ReadableStream,
+name, mime? }`. LO accepts no media HTTP(S) URLs. Photo limit is 10 MiB; document
+and voice limits are 50 MiB. Photo/document captions allow 1024 UTF-16 units. A
+voice must contain AAC in M4A/MP4 or raw AAC; OGG/Opus and voice captions are not
+supported. Filename/MIME checks do not replace the server's content validation.
+The HTTP transport builds multipart, including JSON-string `reply_markup`, and
+bounds streams before fetch. Photo `fileId` comes from the final, largest size.
+
+Cache references per bot. On `BadRequest` describing `wrong file identifier`,
+forget the cached ID and explicitly upload the original again. No automatic
+retry: another upload can create another message, and uploads lack Idempotency-Key.
+
+## Error decisions and send limits
+
+| Error class                                                   | Existing code                                                       | Application decision                                              |
+| ------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `RateLimited` with `retryAfterSec` (also `retryAfterSeconds`) | `rate-limited`                                                      | Schedule after `parameters.retry_after`; no automatic retry       |
+| `NotAllowed`                                                  | `forbidden`                                                         | Stop sending and revoke stored consent                            |
+| `BadRequest` with sanitized `description`                     | `invalid-input`                                                     | Fix the request; do not blindly repeat                            |
+| `Unavailable`                                                 | `unavailable`, legacy network `transport`, or `unsupported` for 501 | Back off; account for an ambiguous outcome and possible duplicate |
+
+All extend `BotError`; API failures also extend `BotApiError`, exported by the
+HTTP transport as the existing `HttpBotError`. Local validation remains
+`BotError("invalid-input")`. Aborts/timeouts retain their existing categories.
+`BOT_SEND_LIMITS`: 30 messages/s per bot, 1/s per chat (burst 5), 20/min per group.
+An installation may configure stricter limits. Queue pacing is application-owned.

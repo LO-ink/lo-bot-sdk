@@ -46,7 +46,10 @@ try {
     run("npm", ["pack", "--json", "--cache", join(temp, "cache")], source),
   )[0];
   assert.equal(packed.name, "@lo-ink/bot-sdk");
-  assert.equal(packed.version, "0.2.0");
+  assert.equal(
+    packed.version,
+    JSON.parse(await readFile(join(root, "package.json"), "utf8")).version,
+  );
   assert.ok(packed.files.some((file) => file.path === "dist/index.js"));
   assert.ok(packed.files.some((file) => file.path === "dist/index.d.ts"));
   await writeFile(

@@ -4,10 +4,15 @@ import {
   validateMenuButton,
   validateInputFile,
   validateCaption,
+  validateVideo,
+  validateAlbum,
+  validateFilePath,
 } from "./validation.js";
 import { BotError } from "./errors.js";
 import type {
   BotCommand,
+  BotCapabilities,
+  BotIdentity,
   BotOperations,
   BotTransport,
   Identifier,
@@ -16,18 +21,20 @@ import type {
 
 function id(value: string, positive = false): void {
   const pattern = positive ? /^[1-9][0-9]*$/ : /^-?[1-9][0-9]*$/;
-  if (typeof value !== "string" || !pattern.test(value))
+  if (
+    typeof value !== "string" ||
+    !pattern.test(value) ||
+    value.replace("-", "").length > 19 ||
+    BigInt(value) < -(2n ** 63n) ||
+    BigInt(value) > 2n ** 63n - 1n
+  )
     throw new BotError("invalid-input", "Expected a valid decimal identifier.");
 }
 function text(value: string): void {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    Array.from(value).length > 4096
-  )
+  if (typeof value !== "string" || !value.trim() || value.length > 4096)
     throw new BotError(
       "invalid-input",
-      "Expected text between 1 and 4096 Unicode code points.",
+      "Expected non-empty text of at most 4096 UTF-16 code units.",
     );
 }
 function object(value: unknown): void {
@@ -37,13 +44,97 @@ function object(value: unknown): void {
 /** Create a client over an explicitly chosen transport. Credentials stay in the transport. */
 export function createBotClient(
   transport: BotTransport,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; capabilitiesTtlMs?: number } = {},
 ) {
   const request = createOperationRequester<BotOperations>(transport, options);
+  const videoTimeoutMs = options.timeoutMs ?? 90_000;
+  const capabilitiesTtlMs = options.capabilitiesTtlMs ?? 300_000;
+  if (
+    !Number.isFinite(capabilitiesTtlMs) ||
+    capabilitiesTtlMs < 0 ||
+    capabilitiesTtlMs > 86_400_000
+  )
+    throw new BotError("invalid-input", "Invalid capability cache lifetime.");
+  let capabilities: BotCapabilities | undefined,
+    expires = 0;
+  const getIdentity = async (
+    options?: RequestOptions,
+  ): Promise<BotIdentity> => {
+    const identity = await request("getIdentity", undefined, options);
+    capabilities =
+      identity.capabilities === undefined
+        ? undefined
+        : Object.freeze({ ...identity.capabilities });
+    expires = Date.now() + capabilitiesTtlMs;
+    return identity;
+  };
   return {
     /** Fetch the authenticated bot identity. */
-    getIdentity: (options?: RequestOptions) =>
-      request("getIdentity", undefined, options),
+    getIdentity,
+    /** Refresh installation flags on demand. Older servers may leave them unknown. */
+    async getCapabilities(
+      options: RequestOptions & { refresh?: boolean } = {},
+    ) {
+      if (
+        !options ||
+        typeof options !== "object" ||
+        Array.isArray(options) ||
+        (options.signal !== undefined &&
+          !(options.signal instanceof AbortSignal))
+      )
+        throw new BotError(
+          "invalid-input",
+          "Expected capability request options.",
+        );
+      if (
+        options.timeoutMs !== undefined &&
+        (!Number.isFinite(options.timeoutMs) ||
+          options.timeoutMs <= 0 ||
+          options.timeoutMs > 2_147_483_647)
+      )
+        throw new BotError(
+          "invalid-input",
+          "Invalid capability request deadline.",
+        );
+      if (options.refresh !== undefined && typeof options.refresh !== "boolean")
+        throw new BotError(
+          "invalid-input",
+          "Expected a boolean capability refresh option.",
+        );
+      if (options.signal?.aborted)
+        throw new BotError("aborted", "Request aborted.");
+      if (options.refresh || Date.now() >= expires) {
+        const { refresh: _refresh, ...requestOptions } = options;
+        await getIdentity(requestOptions);
+      }
+      return capabilities;
+    },
+    /** Complete a callback button action. */
+    async answerCallback(
+      input: BotOperations["answerCallback"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      if (
+        typeof input.callbackId !== "string" ||
+        !input.callbackId ||
+        input.callbackId.length > 1024 ||
+        input.callbackId.trim() !== input.callbackId ||
+        /[\u0000-\u001f]/.test(input.callbackId)
+      )
+        throw new BotError("invalid-input", "Expected a callback identifier.");
+      if (
+        input.text !== undefined &&
+        (typeof input.text !== "string" || Array.from(input.text).length > 200)
+      )
+        throw new BotError(
+          "invalid-input",
+          "Callback answer text is limited to 200 characters.",
+        );
+      if (input.showAlert !== undefined && typeof input.showAlert !== "boolean")
+        throw new BotError("invalid-input", "Expected a boolean alert option.");
+      return request("answerCallback", input, options);
+    },
     /** Send one plain-text message. Retrying can create another message. */
     async sendMessage(
       input: BotOperations["sendMessage"]["input"],
@@ -64,7 +155,7 @@ export function createBotClient(
       id(input.conversationId);
       id(input.messageId, true);
       text(input.text);
-      validateReplyMarkup(input.replyMarkup, input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       return request("editMessage", input, options);
     },
     async sendPhoto(
@@ -73,10 +164,76 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
-      validateReplyMarkup(input.replyMarkup, input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateCaption(input.caption);
       validateInputFile(input.photo, "photo");
       return request("sendPhoto", input, options);
+    },
+    async sendVideo(
+      input: BotOperations["sendVideo"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId, true);
+      validateVideo(input);
+      return request("sendVideo", input, {
+        timeoutMs: videoTimeoutMs,
+        ...options,
+      });
+    },
+    async sendAudio(
+      input: BotOperations["sendAudio"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId, true);
+      validateCaption(input.caption);
+      validateInputFile(input.audio, "audio");
+      if (!("fileId" in input.audio))
+        throw new BotError(
+          "invalid-input",
+          "LO audio requires a reusable fileId; uploads are unavailable.",
+        );
+      return request("sendAudio", input, options);
+    },
+    async sendMediaGroup(
+      input: BotOperations["sendMediaGroup"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      validateAlbum(input.media);
+      return request("sendMediaGroup", input, options);
+    },
+    async getFile(fileId: string, options?: RequestOptions) {
+      validateInputFile({ fileId }, "document");
+      return request("getFile", { fileId }, options);
+    },
+    async downloadFile(
+      input: BotOperations["downloadFile"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      validateFilePath(input.path);
+      if (
+        input.maxBytes !== undefined &&
+        (!Number.isSafeInteger(input.maxBytes) ||
+          input.maxBytes < 1 ||
+          input.maxBytes > 50 * 1024 * 1024)
+      )
+        throw new BotError(
+          "invalid-input",
+          "maxBytes must be between 1 and 52428800.",
+        );
+      if (input.signal !== undefined && !(input.signal instanceof AbortSignal))
+        throw new BotError("invalid-input", "Expected a download AbortSignal.");
+      return request(
+        "downloadFile",
+        { ...input, signal: input.signal ?? options?.signal },
+        options,
+      );
     },
     async sendDocument(
       input: BotOperations["sendDocument"]["input"],
@@ -84,7 +241,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
-      validateReplyMarkup(input.replyMarkup, input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateCaption(input.caption);
       validateInputFile(input.document, "document");
       return request("sendDocument", input, options);
@@ -95,7 +252,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
-      validateReplyMarkup(input.replyMarkup, input.conversationId);
+      validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateInputFile(input.voice, "voice");
       if (Object.hasOwn(input, "caption"))
         throw new BotError(

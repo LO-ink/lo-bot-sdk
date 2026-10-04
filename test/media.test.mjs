@@ -60,17 +60,17 @@ test("menu text accepts 64 Unicode code points and rejects the next one before t
   });
   await bot.setChatMenuButton({
     menuButton: {
-      type: "web_app",
+      type: "miniApp",
       text: "Я".repeat(64),
-      web_app: { url: "https://app.example.test/" },
+      miniApp: { url: "https://app.example.test/" },
     },
   });
   await assert.rejects(
     bot.setChatMenuButton({
       menuButton: {
-        type: "web_app",
+        type: "miniApp",
         text: "Я".repeat(65),
-        web_app: { url: "https://app.example.test/" },
+        miniApp: { url: "https://app.example.test/" },
       },
     }),
     (error) => error.code === "invalid-input",

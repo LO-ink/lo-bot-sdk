@@ -284,6 +284,7 @@ export function validateAlbum(media: readonly AlbumItem[]): void {
   if (!Array.isArray(media) || media.length < 2 || media.length > 10)
     fail("LO albums require 2–10 items.");
   let type: string | undefined;
+  const documents = new Set<string>();
   for (let i = 0; i < media.length; i++) {
     const item = record(media[i]);
     if (
@@ -297,6 +298,12 @@ export function validateAlbum(media: readonly AlbumItem[]): void {
       fail("LO albums cannot mix media types.");
     type = item.type as string;
     validateInputFile(item.media as InputFile, type as "photo" | "document");
+    if (type === "document" && "fileId" in (item.media as InputFile)) {
+      const fileId = (item.media as { fileId: string }).fileId;
+      if (documents.has(fileId))
+        fail("LO document albums require distinct file references.");
+      documents.add(fileId);
+    }
     validateCaption(item.caption);
     if (i > 0 && item.caption !== undefined && item.caption !== "")
       fail("Only the first album item may have a caption.");
@@ -323,7 +330,10 @@ export function validateFilePath(path: string): void {
     /[\\\u0000-\u0020?#%]/.test(decoded) ||
     decoded.startsWith("/") ||
     decoded.split("/").some((part) => !part || part === "." || part === "..") ||
-    /^[a-z][a-z0-9+.-]*:/i.test(decoded)
+    (/^[a-z][a-z0-9+.-]*:/i.test(decoded) &&
+      !/^(?:photo:[1-9]\d{0,18}:[A-Za-z0-9_-]{1,32}|(?:file|voice|audio):[1-9]\d{0,18}|video:-?[1-9]\d{0,18}):[A-Za-z0-9_-]{22}$/.test(
+        decoded,
+      ))
   )
     fail("Expected a relative LO file path without traversal.");
 }

@@ -294,3 +294,53 @@ test("callback answers and reply keyboard removal validate before transport", as
     );
   assert.equal(calls.length, 2);
 });
+
+test("downloads accept signed LO media references returned by getFile", async () => {
+  const { bot, calls } = fixture();
+  const signature = "A".repeat(22);
+  for (const path of [
+    `file:17:${signature}`,
+    `photo:17:lg:${signature}`,
+    `voice:17:${signature}`,
+    `audio:17:${signature}`,
+    `video:-17:${signature}`,
+  ]) {
+    await bot.downloadFile({ path });
+    await bot.downloadFile({ path: encodeURIComponent(path) });
+  }
+  assert.equal(calls.length, 10);
+  for (const path of [
+    "file:17:invalid",
+    `file:-17:${signature}`,
+    `photo:17:../:${signature}`,
+    `https:17:${signature}`,
+    "javascript:alert(1)",
+    "file:///tmp/file",
+    `file:17:${signature}/..`,
+  ])
+    await assert.rejects(bot.downloadFile({ path }), { code: "invalid-input" });
+  assert.equal(calls.length, 10);
+});
+
+test("document albums reject duplicate cached references before transport; photos may repeat", async () => {
+  const { bot, calls } = fixture();
+  await assert.rejects(
+    bot.sendMediaGroup({
+      conversationId: "42",
+      media: [
+        { type: "document", media: { fileId: "same-file" } },
+        { type: "document", media: { fileId: "same-file" } },
+      ],
+    }),
+    /distinct file references/,
+  );
+  assert.equal(calls.length, 0);
+  await bot.sendMediaGroup({
+    conversationId: "42",
+    media: [
+      { type: "photo", media: { fileId: "same-photo" } },
+      { type: "photo", media: { fileId: "same-photo" } },
+    ],
+  });
+  assert.equal(calls.length, 1);
+});

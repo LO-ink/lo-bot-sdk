@@ -268,7 +268,7 @@ if (file.path) {
 }
 ```
 
-Video metadata and thumbnails apply only to uploads. Video uploads depend on the installation; audio uploads are unavailable. `sendAudio` accepts only `fileId`. Albums require 2–10 photos or 2–10 documents, with one caption on the first item. LO stores an album as one message: its returned items may share a message ID.
+Video metadata and thumbnails apply only to uploads. Video uploads depend on the installation; audio uploads are unavailable. `sendAudio` accepts only `fileId`. Albums require 2–10 photos or 2–10 documents, with one caption on the first item. Cached document references must be distinct. LO stores an album as one message: its returned items may share a message ID.
 
 Video defaults to a 90-second request deadline because transcoding can wait 45 seconds. An explicit client or request deadline takes precedence. Other calls retain their 35-second default. File downloads stay on the authenticated LO file route, refuse redirects and stop at 50 MiB by default. A missing `path` means this media has no direct downloadable file.
 
@@ -289,3 +289,5 @@ for (const update of await bot.getUpdates()) {
   }
 }
 ```
+
+Download paths include signed LO media references returned by `getFile`. Pass the returned path unchanged to `downloadFile`; it stays on the authenticated file route. URLs and traversal are refused.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Reject repeated cached document references in albums before sending; LO requires distinct documents.
+
+- Accept signed LO media references returned by `getFile` as relative download paths while continuing to reject URLs and traversal.
+
 ## 0.4.0
 
 - Add callback updates/answers, app-data events without fabricated message IDs, and reply keyboard removal.

@@ -6,7 +6,9 @@ A typed server-side bot client. The client owns input validation, deadlines and 
 
 - Read bot identity and configured commands.
 - Send, edit and delete plain-text messages.
-- Send photos, documents and AAC voice messages by upload or cached file ID.
+- Send photos, documents, AAC voice messages and videos by upload or cached file ID.
+- Send audio by file ID and homogeneous photo/document albums.
+- Resolve file metadata and download a bounded byte stream.
 - Open registered mini-apps through typed keyboards and chat menu buttons.
 - Replace the command list.
 - Poll normalized updates with an explicit processing cursor.
@@ -107,11 +109,10 @@ never generate a replacement key. `BotError.code` classifies `forbidden`,
 `conflict`, `invalid-input`, `rate-limited`, `timeout`, `aborted` and transport
 failures. Respect `retryAfterSeconds`; do not log upstream bodies or credentials.
 
-The [LO HTTP adapter and no-AI reference bot](https://github.com/lo-ink/lo-platform-adapters/tree/main/examples/secretary)
+The [LO HTTP adapter and reference bot](https://github.com/lo-ink/lo-platform-adapters/tree/main/examples/secretary)
 show polling and authenticated webhooks, private durable state, replay handling,
 revoke and explicit per-chat auto opt-in. This is LO-native delegation: familiar
-business wire names do not imply Telegram accounts, Telegram profile permissions,
-history access, money/gifts, or a Telegram connector. AI is not enabled.
+Secretary rights apply only to the LO connection and owner consent recorded by the server.
 
 Secretary messages may include `caption`, `attachments`, `albumId` and
 `mediaStatus`. Supported incoming files use `secretary-v1` read capabilities
@@ -156,23 +157,22 @@ Once a source has a draft, `sendText` cannot bypass its approval.
 
 The existing direct send methods remain available under the owner's explicit
 `send_messages` permission for sources without a draft. SDK settings and bot
-payloads cannot authorize an automatic rule. This reference workflow has no AI
-provider or model calls.
+payloads cannot authorize an automatic rule.
 
 ## Open a mini-app from a bot
 
-Requires `@lo-ink/bot-http-lo` 0.3.0 or a transport implementing the new operations.
+Requires `@lo-ink/bot-http-lo` 0.4.0 or a transport implementing the new operations.
 
 ```ts
 await bot.sendMessage({
   conversationId: verifiedUserId,
   text: "Пора сыграть!",
   replyMarkup: {
-    inline_keyboard: [
+    inlineKeyboard: [
       [
         {
           text: "Открыть",
-          web_app: { url: registeredAppUrl },
+          miniApp: { url: registeredAppUrl },
         },
       ],
     ],
@@ -180,9 +180,9 @@ await bot.sendMessage({
 });
 await bot.setChatMenuButton({
   menuButton: {
-    type: "web_app",
+    type: "miniApp",
     text: "Открыть",
-    web_app: { url: registeredAppUrl },
+    miniApp: { url: registeredAppUrl },
   },
 });
 ```
@@ -190,8 +190,8 @@ await bot.setChatMenuButton({
 `registeredAppUrl` must match the LO Connect URL **byte for byte**, including query
 and trailing slash, to receive registered signed launch data. Web App buttons
 require HTTPS and a private chat; reply-keyboard Web App URLs are limited to 512
-UTF-8 bytes. Inline keyboards support `url`, `callback_data` (1–64 bytes) and
-`web_app`. `replyMarkup` is optional on text edits and all media sends.
+UTF-8 bytes. Inline keyboards support `url`, `callbackData` (1–64 bytes) and
+`miniApp`. `replyMarkup` is optional on text edits and all media sends.
 
 ## Upload once, reuse a file
 
@@ -214,7 +214,7 @@ and voice limits are 50 MiB. Photo/document captions allow 1024 UTF-16 units. A
 voice must contain AAC in M4A/MP4 or raw AAC; OGG/Opus and voice captions are not
 supported. Filename/MIME checks do not replace the server's content validation.
 The HTTP transport builds multipart, including JSON-string `reply_markup`, and
-bounds streams before fetch. Photo `fileId` comes from the final, largest size.
+bounds streams before fetch. Photo `fileId` comes from the final, largest size. Media sends and text edits accept inline keyboards; reply keyboards are supported only by `sendMessage`.
 
 Cache references per bot. On `BadRequest` describing `wrong file identifier`,
 forget the cached ID and explicitly upload the original again. No automatic
@@ -234,3 +234,58 @@ HTTP transport as the existing `HttpBotError`. Local validation remains
 `BotError("invalid-input")`. Aborts/timeouts retain their existing categories.
 `BOT_SEND_LIMITS`: 30 messages/s per bot, 1/s per chat (burst 5), 20/min per group.
 An installation may configure stricter limits. Queue pacing is application-owned.
+
+## Video, albums and downloads
+
+```ts
+const video = await bot.sendVideo({
+  conversationId: verifiedUserId,
+  video: { data: videoBytes, name: "clip.mp4", mime: "video/mp4" },
+  duration: 3,
+  width: 640,
+  height: 360,
+  thumbnail: { data: posterBytes, name: "poster.jpg", mime: "image/jpeg" },
+  supportsStreaming: true,
+});
+await bot.sendVideo({
+  conversationId: verifiedUserId,
+  video: { fileId: video.fileId },
+});
+await bot.sendMediaGroup({
+  conversationId: verifiedUserId,
+  media: [
+    { type: "photo", media: { fileId: firstPhotoId }, caption: "Album" },
+    { type: "photo", media: { fileId: secondPhotoId } },
+  ],
+});
+const file = await bot.getFile(receivedFileId);
+if (file.path) {
+  const stream = await bot.downloadFile({
+    path: file.path,
+    signal: abortController.signal,
+  });
+  // Consume or cancel the stream. The signal also cancels an ongoing download.
+}
+```
+
+Video metadata and thumbnails apply only to uploads. Video uploads depend on the installation; audio uploads are unavailable. `sendAudio` accepts only `fileId`. Albums require 2–10 photos or 2–10 documents, with one caption on the first item. LO stores an album as one message: its returned items may share a message ID.
+
+Video defaults to a 90-second request deadline because transcoding can wait 45 seconds. An explicit client or request deadline takes precedence. Other calls retain their 35-second default. File downloads stay on the authenticated LO file route, refuse redirects and stop at 50 MiB by default. A missing `path` means this media has no direct downloadable file.
+
+`getIdentity()` exposes group-reading and inline-query flags. `capabilities` is optional: absence means unknown, never disabled. Installation features must be discovered or refreshed by the transport/application.
+
+`BotApiError.details` carries structured `parameter` and `reason` when provided. Older descriptions are classified only in the LO HTTP adapter. `retryRejected(() => bot.sendVideo(input))` is opt-in and retries once after an explicit 429 refusal marked `safeToRetry`, within `maxWaitSeconds` (30 by default). It never retries network failures or uncertain outcomes. The operation must create a fresh stream for each attempt or use replayable bytes/Blob.
+
+Version 0.4 uses native LO keyboard fields (`inlineKeyboard`, `callbackData`, `miniApp`, `resize`, `oneTime`, `persistent`, `placeholder`). Menu app buttons use `type: "miniApp"`. The HTTP adapter owns server serialization. Update 0.3 keyboard objects when upgrading both packages.
+
+Call `await bot.getCapabilities()` at startup and before jobs that depend on installation features. Results refresh on demand after five minutes; `getCapabilities({refresh: true})` bypasses the cache. `undefined` on older servers means unknown. Bot permissions remain separate identity fields. No background polling or timers are installed.
+
+Incoming updates distinguish ordinary messages, callback buttons and `appData` events. App data from older LO installations may omit a stored message ID; the event retains its real update cursor and conversation. Treat `data` as user input, and verify signed launch data separately for application authorization. Incoming media messages also expose `mediaType` and a reusable `fileId` when available. Cache references per bot. Reply keyboards can be cleared with `{removeKeyboard: true}`.
+
+```ts
+for (const update of await bot.getUpdates()) {
+  if (update.kind === "callback") {
+    await bot.answerCallback({ callbackId: update.callback.id, text: "Done" });
+  }
+}
+```

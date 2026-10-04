@@ -12,6 +12,17 @@ export type BotErrorCode =
   | "unavailable"
   | "invalid-response"
   | "transport";
+export type BotFailureReason =
+  | "unsupported_parameter"
+  | "upload_only"
+  | "feature_disabled"
+  | "method_not_implemented";
+export interface BotFailureDetails {
+  readonly parameter?: string;
+  readonly reason?: BotFailureReason;
+  /** True only when an explicit server refusal guarantees no message was committed. */
+  readonly safeToRetry?: boolean;
+}
 /** A request failure with a stable category and optional retry guidance. */
 export class BotError extends Error {
   override readonly name = "BotError";
@@ -33,6 +44,7 @@ export class BotApiError extends BotError {
     readonly platformCode?: number,
     retryAfterSeconds?: number,
     readonly description?: string,
+    readonly details?: BotFailureDetails,
   ) {
     super(code, message, retryAfterSeconds);
     Object.defineProperty(this, "name", {
@@ -42,13 +54,20 @@ export class BotApiError extends BotError {
   }
 }
 export class RateLimited extends BotApiError {
-  constructor(retryAfterSec?: number, status?: number, platformCode?: number) {
+  constructor(
+    retryAfterSec?: number,
+    status?: number,
+    platformCode?: number,
+    details?: BotFailureDetails,
+  ) {
     super(
       "rate-limited",
       "LO Bot API rate limit was reached.",
       status,
       platformCode,
       retryAfterSec,
+      undefined,
+      details,
     );
     Object.defineProperty(this, "name", { value: "RateLimited" });
   }
@@ -73,6 +92,7 @@ export class BadRequest extends BotApiError {
     description: string = "LO Bot API rejected the request.",
     status?: number,
     platformCode?: number,
+    details?: BotFailureDetails,
   ) {
     super(
       "invalid-input",
@@ -81,6 +101,7 @@ export class BadRequest extends BotApiError {
       platformCode,
       undefined,
       description,
+      details,
     );
     Object.defineProperty(this, "name", { value: "BadRequest" });
   }
@@ -91,8 +112,9 @@ export class Unavailable extends BotApiError {
     status?: number,
     platformCode?: number,
     code: "unavailable" | "transport" | "unsupported" = "unavailable",
+    details?: BotFailureDetails,
   ) {
-    super(code, message, status, platformCode);
+    super(code, message, status, platformCode, undefined, undefined, details);
     Object.defineProperty(this, "name", { value: "Unavailable" });
   }
 }

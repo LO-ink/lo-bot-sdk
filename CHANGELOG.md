@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+
+- Add callback updates/answers, app-data events without fabricated message IDs, and reply keyboard removal.
+
+- Use native LO keyboard fields; HTTP serialization stays in the adapter. Upgrade 0.3 keyboard objects alongside the HTTP package.
+- Add an on-demand capability cache with explicit refresh; unknown installation flags remain unknown.
+
+- Add video uploads/reference sends, audio references, homogeneous albums and streamed file downloads.
+- Validate UTF-16 text limits, non-empty text, video metadata and inline-only media/edit keyboards before transport.
+- Expose identity flags and optional installation capabilities; add structured failure details and one opt-in retry after confirmed refusal.
+- Remove non-LO URL schemes from native keyboard validation.
+
 ## 0.3.0
 
 - Added typed inline/reply Web App keyboards, chat menu buttons, sendPhoto/sendDocument/sendVoice and reusable fileId results.

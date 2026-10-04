@@ -180,13 +180,13 @@ test("invalid cancellation signals reject before reaching transport", async () =
     );
   }
 });
-test("text limits count Unicode code points", async () => {
+test("text limits match LO UTF-16 units", async () => {
   const client = createBotClient({
     async execute(_operation, input) {
       return input;
     },
   });
-  const valid = "🌵".repeat(4096);
+  const valid = "🌵".repeat(2048);
   assert.equal(
     (await client.sendMessage({ conversationId: "1", text: valid })).text,
     valid,

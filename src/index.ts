@@ -68,3 +68,12 @@ export type {
   BotFile,
   UploadFile,
 } from "./types.js";
+
+export { createLoBotClient, createLoSecretaryClient } from "./lo.js";
+export {
+  createLoHttpBotTransport,
+  decodeLoBotUpdate,
+  parseLoBotWebhookUpdate,
+  HttpBotError,
+} from "./http/index.js";
+export type { LoHttpBotTransportOptions } from "./http/index.js";

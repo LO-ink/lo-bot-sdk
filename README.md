@@ -44,7 +44,7 @@ npm pack --dry-run
 
 Transport integration and upstream-library compatibility are maintained in [lo-platform-adapters](https://github.com/lo-ink/lo-platform-adapters). Their test results are separate from this client's unit tests.
 
-## LO-native secretary extension (0.2)
+## LO-native secretary extension
 
 `createSecretaryClient` uses a separate `SecretaryTransport` extension. Existing
 ordinary transports continue implementing `BotTransport` alone. Normalized
@@ -66,7 +66,7 @@ import {
   type SecretaryUpdate,
 } from "@lo-ink/bot-sdk";
 
-export async function reply(
+export async function proposeForReview(
   transport: SecretaryTransport,
   update: SecretaryUpdate,
   requestId: string,
@@ -78,17 +78,27 @@ export async function reply(
   if (
     !connection.enabled ||
     connection.policyVersion !== update.context.policyVersion ||
+    connection.ownerId === update.message.senderId ||
+    !connection.rights.includes("receive_messages") ||
     !connection.rights.includes("send_messages")
   )
     return;
-  return secretary.sendText({
+  return secretary.proposeDraft({
     connectionId: connection.id,
     context: update.context,
     requestId, // Persist before sending; reuse the same key and body on uncertainty.
-    text: "Your message was received.",
+    text: "Your message was received. The owner will review this reply.",
+    reason: "manual_review",
   });
 }
 ```
+
+This example creates a proposal. The human owner approves it in LO. For durable
+processing, commit the complete request before calling the client and restore
+that exact input after a restart. Direct `sendText` is a separate operation under
+explicit send permission; it does not provide a universal approval gate.
+See the [Secretary integration guide](https://github.com/LO-ink/lo-developer-tools/blob/main/docs/secretary.md)
+and the [CI-checked review example](https://github.com/LO-ink/lo-platform-adapters/blob/main/examples/secretary-review.ts).
 
 The server rechecks current consent, token generation, chat scope, source revision,
 manual takeover and the 24-hour incoming window at every action. A cached
@@ -142,7 +152,7 @@ receive a typed unsupported response.
 
 ### Review drafts and owner-controlled automatic templates
 
-`client.proposeDraft({ connection, requestId, text, reason: 'template' })`
+`client.proposeDraft({ connectionId, context, requestId, text, reason: 'manual_review' })`
 creates a text draft bound to the delivered source/context. Reasons are
 `template`, `manual_review`, or `cannot_answer`; text is at most 4096 UTF-16
 units. The receipt carries draft ID, revision, state, mode and expiry. Retry an

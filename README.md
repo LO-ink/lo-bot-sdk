@@ -1,10 +1,11 @@
 # LO Bot SDK
 
-A typed server-side bot client. The client owns input validation, deadlines and cancellation. An explicitly supplied transport owns server serialization and credentials.
+A typed server-side bot client. The client owns input validation, deadlines and cancellation. Native LO HTTP transport is included; generic clients can also accept an explicitly supplied transport.
 
 ## Supported client operations
 
 - Read bot identity and configured commands.
+- Acknowledge callback button actions.
 - Send, edit and delete plain-text messages.
 - Send photos, documents, AAC voice messages and videos by upload or cached file ID.
 - Send audio by file ID and homogeneous photo/document albums.
@@ -13,19 +14,36 @@ A typed server-side bot client. The client owns input validation, deadlines and 
 - Replace the command list.
 - Poll normalized updates with an explicit processing cursor.
 
-The client surface is not the complete server API. Callback acknowledgement and some advanced server methods are outside this client surface. The LO HTTP adapter provides lossless webhook parsing; the application must authenticate each webhook first. Unrecognized polled updates are represented as `kind: 'unhandled'` with their cursor; callers must decide how to handle them before advancing the offset.
+The client surface is not the complete server API. Advanced server methods are outside this client surface. The SDK provides lossless LO webhook parsing; the application must authenticate each webhook first. Unrecognized polled updates are represented as `kind: 'unhandled'` with their cursor; callers must decide how to handle them before advancing the offset.
 
 ## Usage
 
-```ts
-import { createBotClient, type BotTransport } from "@lo-ink/bot-sdk";
-
-export async function identifyBot(transport: BotTransport) {
-  const bot = createBotClient(transport, { timeoutMs: 35_000 });
-  const identity = await bot.getIdentity();
-  return identity;
-}
+```sh
+npm install @lo-ink/bot-sdk
 ```
+
+```ts
+import { createLoBotClient } from "@lo-ink/bot-sdk";
+
+const token = process.env.LO_BOT_TOKEN;
+if (!token) throw new Error("LO_BOT_TOKEN is required");
+const bot = createLoBotClient({ token });
+const identity = await bot.getIdentity();
+```
+
+`createLoSecretaryClient(options)` provides the native secretary extension.
+`createLoHttpBotTransport(options)` is available for explicitly shared transport
+ownership. `createBotClient(transport)` and `createSecretaryClient(transport)`
+remain unchanged for injected transports.
+
+The native HTTP implementation owns bounded responses/downloads, lossless IDs,
+wire serialization and credential redaction. It never retries a mutation after
+an uncertain delivery. `parseLoBotWebhookUpdate` parses normalized updates;
+authenticate webhook requests before parsing or trusting them.
+
+Version 0.5 includes the native HTTP implementation previously published as
+`@lo-ink/bot-http-lo`. The 0.6 adapter is an optional compatibility re-export;
+new LO applications require only this SDK.
 
 Identifiers are decimal strings. Do not convert them to JavaScript numbers. The default deadline covers polling waits up to 30 seconds. Each call can override the deadline and supply an `AbortSignal`.
 
@@ -42,7 +60,7 @@ npm test
 npm pack --dry-run
 ```
 
-Transport integration and upstream-library compatibility are maintained in [lo-platform-adapters](https://github.com/lo-ink/lo-platform-adapters). Their test results are separate from this client's unit tests.
+Native transport tests run with the client tests. External integrations and compatibility re-exports are maintained in [lo-platform-adapters](https://github.com/lo-ink/lo-platform-adapters).
 
 ## LO-native secretary extension
 

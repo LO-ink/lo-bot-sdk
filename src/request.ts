@@ -1,5 +1,5 @@
 import { BotError } from "./errors.js";
-import type { RequestOptions } from "./types.js";
+import type { RequestOptions } from "./entities.js";
 function object(value: unknown): void {
   if (value === null || typeof value !== "object" || Array.isArray(value))
     throw new BotError("invalid-input", "Expected an input object.");

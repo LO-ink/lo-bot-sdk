@@ -1,0 +1,17 @@
+{
+  "all": true,
+  "include": ["dist/**/*.js"],
+  "exclude": [
+    "**/*.d.ts",
+    "dist/entities.js",
+    "dist/types.js",
+    "dist/secretary-types.js"
+  ],
+  "extension": [".js", ".mjs", ".ts", ".tsx"],
+  "reporter": ["text", "json-summary", "lcov"],
+  "check-coverage": true,
+  "lines": 90,
+  "statements": 90,
+  "functions": 90,
+  "branches": 80
+}

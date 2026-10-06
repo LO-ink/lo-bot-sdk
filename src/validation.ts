@@ -35,6 +35,7 @@ function url(value: unknown, httpsOnly: boolean): void {
   if (
     typeof value !== "string" ||
     value.trim() !== value ||
+    // eslint-disable-next-line no-control-regex -- Reject control bytes in untrusted input.
     /[\u0000\r\n\t]/.test(value)
   )
     fail("Expected a valid button URL.");
@@ -189,6 +190,7 @@ export function validateInputFile(
     if (
       /^(?:https?:|attach:)/i.test(file.fileId) ||
       file.fileId.trim() !== file.fileId ||
+      // eslint-disable-next-line no-control-regex -- Reject control bytes in untrusted input.
       /[\u0000\r\n]/.test(file.fileId)
     )
       fail("LO does not accept media URLs; upload a file or reuse a fileId.");
@@ -203,6 +205,7 @@ export function validateInputFile(
   if (
     typeof file.name !== "string" ||
     !file.name ||
+    // eslint-disable-next-line no-control-regex -- Reject control bytes in untrusted input.
     /[\u0000\r\n]/.test(file.name)
   )
     fail("Expected a file name.");
@@ -317,6 +320,7 @@ export function validateFilePath(path: string): void {
     !path ||
     path.length > 4096 ||
     path.startsWith("/") ||
+    // eslint-disable-next-line no-control-regex -- Reject control bytes in untrusted input.
     /[\\\u0000-\u0020?#]/.test(path)
   )
     fail("Expected a relative LO file path.");
@@ -327,6 +331,7 @@ export function validateFilePath(path: string): void {
     fail("Invalid file path encoding.");
   }
   if (
+    // eslint-disable-next-line no-control-regex -- Reject control bytes in untrusted input.
     /[\\\u0000-\u0020?#%]/.test(decoded) ||
     decoded.startsWith("/") ||
     decoded.split("/").some((part) => !part || part === "." || part === "..") ||

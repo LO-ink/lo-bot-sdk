@@ -4,3 +4,12 @@ dist/
 .env
 .env.*
 !.env.example
+coverage/
+.venv/
+.ruff_cache/
+.mypy_cache/
+
+.coverage
+.coverage.*
+**/*.egg-info/
+**/build/

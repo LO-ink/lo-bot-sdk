@@ -305,3 +305,8 @@ statements, 90% functions, or 80% branches. Reports are uploaded as CI artifacts
 
 Compiled modules containing only TypeScript type exports have no executable
 behavior and are excluded from coverage. Runtime modules are all included.
+
+Repository policy checks require Python 3 for Python comment tokenization. YAML
+comments are parsed as YAML; embedded scripts and localized scalar values retain
+their own language. LO credentials are checked by the root Gitleaks configuration
+and a synthetic scanner regression before each repository scan.

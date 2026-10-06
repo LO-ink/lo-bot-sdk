@@ -2,3 +2,13 @@ node_modules
 dist
 *.tgz
 package-lock.json
+
+coverage/
+.venv/
+**/*.tgz
+.ruff_cache/
+.mypy_cache/
+
+**/*.egg-info
+**/build
+coverage-go.out

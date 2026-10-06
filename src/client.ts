@@ -136,6 +136,7 @@ export function createBotClient(
         !input.callbackId ||
         input.callbackId.length > 1024 ||
         input.callbackId.trim() !== input.callbackId ||
+        // eslint-disable-next-line no-control-regex -- Reject control bytes in untrusted input.
         /[\u0000-\u001f]/.test(input.callbackId)
       )
         throw new BotError("invalid-input", "Expected a callback identifier.");

@@ -166,12 +166,12 @@ Requires `@lo-ink/bot-http-lo` 0.4.0 or a transport implementing the new operati
 ```ts
 await bot.sendMessage({
   conversationId: verifiedUserId,
-  text: "Пора сыграть!",
+  text: "Time to play!",
   replyMarkup: {
     inlineKeyboard: [
       [
         {
-          text: "Открыть",
+          text: "Open",
           miniApp: { url: registeredAppUrl },
         },
       ],
@@ -181,7 +181,7 @@ await bot.sendMessage({
 await bot.setChatMenuButton({
   menuButton: {
     type: "miniApp",
-    text: "Открыть",
+    text: "Open",
     miniApp: { url: registeredAppUrl },
   },
 });
@@ -199,7 +199,7 @@ UTF-8 bytes. Inline keyboards support `url`, `callbackData` (1–64 bytes) and
 const sent = await bot.sendPhoto({
   conversationId: verifiedUserId,
   photo: { data: bytes, name: "result.png", mime: "image/png" },
-  caption: "Ваш результат",
+  caption: "Your result",
   replyMarkup,
 });
 await bot.sendPhoto({
@@ -291,3 +291,17 @@ for (const update of await bot.getUpdates()) {
 ```
 
 Download paths include signed LO media references returned by `getFile`. Pass the returned path unchanged to `downloadFile`; it stays on the authenticated file route. URLs and traversal are refused.
+
+## Quality checks
+
+Run `make install` and `make ci` with Node.js 22.13 or newer. The same targets run
+in GitHub Actions. CI checks formatting, ESLint (including typed promises),
+TypeScript, dependency cycles and package boundaries, tests, published package
+contents, vulnerable dependencies and secrets. English documentation and comments
+are enforced; unfinished development notes and retired repository URLs fail CI.
+
+Coverage includes unimported production files and fails below 90% lines and
+statements, 90% functions, or 80% branches. Reports are uploaded as CI artifacts.
+
+Compiled modules containing only TypeScript type exports have no executable
+behavior and are excluded from coverage. Runtime modules are all included.

@@ -8,6 +8,32 @@ function validTimeout(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 2_147_483_647;
 }
 
+export function validateRequestOptions(
+  requestOptions: RequestOptions,
+  defaultTimeout: number,
+) {
+  object(requestOptions);
+  const signal = requestOptions.signal;
+  if (
+    signal !== undefined &&
+    (signal === null ||
+      typeof signal !== "object" ||
+      typeof signal.aborted !== "boolean" ||
+      typeof signal.addEventListener !== "function" ||
+      typeof signal.removeEventListener !== "function")
+  ) {
+    throw new BotError("invalid-input", "Expected an AbortSignal.");
+  }
+  const timeout = requestOptions.timeoutMs ?? defaultTimeout;
+  if (!validTimeout(timeout))
+    throw new BotError(
+      "invalid-input",
+      "timeoutMs must be an integer between 1 and 2147483647.",
+    );
+  if (signal?.aborted) throw new BotError("aborted", "Request aborted.");
+  return { signal, timeout };
+}
+
 export function createOperationRequester<
   Operations extends {
     [K in keyof Operations]: { input: unknown; output: unknown };
@@ -36,26 +62,10 @@ export function createOperationRequester<
     input: Operations[K]["input"],
     requestOptions: RequestOptions = {},
   ): Promise<Operations[K]["output"]> {
-    object(requestOptions);
-    const signal = requestOptions.signal;
-    if (
-      signal !== undefined &&
-      (signal === null ||
-        typeof signal !== "object" ||
-        typeof signal.aborted !== "boolean" ||
-        typeof signal.addEventListener !== "function" ||
-        typeof signal.removeEventListener !== "function")
-    ) {
-      throw new BotError("invalid-input", "Expected an AbortSignal.");
-    }
-    const timeout = requestOptions.timeoutMs ?? defaultTimeout;
-    if (!validTimeout(timeout))
-      throw new BotError(
-        "invalid-input",
-        "timeoutMs must be an integer between 1 and 2147483647.",
-      );
-    if (signal?.aborted)
-      return Promise.reject(new BotError("aborted", "Request aborted."));
+    const { signal, timeout } = validateRequestOptions(
+      requestOptions,
+      defaultTimeout,
+    );
     return new Promise((resolve, reject) => {
       const controller = new AbortController();
       let settled = false;

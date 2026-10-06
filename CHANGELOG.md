@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Fence capability-cache updates by identity-request ownership so older responses cannot undo an explicit refresh or extend its lifetime. Failed refreshes preserve the last established cache; aborted requests cannot publish late results.
+
 ## 0.4.1
 
 - Reject repeated cached document references in albums before sending; LO requires distinct documents.

@@ -1,4 +1,4 @@
-import { createOperationRequester } from "./request.js";
+import { createOperationRequester, validateRequestOptions } from "./request.js";
 import {
   validateReplyMarkup,
   validateMenuButton,
@@ -47,6 +47,7 @@ export function createBotClient(
   options: { timeoutMs?: number; capabilitiesTtlMs?: number } = {},
 ) {
   const request = createOperationRequester<BotOperations>(transport, options);
+  const identityTimeoutMs = options.timeoutMs ?? 35_000;
   const videoTimeoutMs = options.timeoutMs ?? 90_000;
   const capabilitiesTtlMs = options.capabilitiesTtlMs ?? 300_000;
   if (
@@ -57,17 +58,27 @@ export function createBotClient(
     throw new BotError("invalid-input", "Invalid capability cache lifetime.");
   let capabilities: BotCapabilities | undefined,
     expires = 0;
-  const getIdentity = async (
-    options?: RequestOptions,
-  ): Promise<BotIdentity> => {
-    const identity = await request("getIdentity", undefined, options);
-    capabilities =
+  let identityRequestOwner = 0;
+  let cachedIdentityOwner = 0;
+  const readIdentity = async (requestOptions: RequestOptions = {}) => {
+    validateRequestOptions(requestOptions, identityTimeoutMs);
+    const owner = ++identityRequestOwner;
+    const identity = await request("getIdentity", undefined, requestOptions);
+    const snapshot =
       identity.capabilities === undefined
         ? undefined
         : Object.freeze({ ...identity.capabilities });
-    expires = Date.now() + capabilitiesTtlMs;
-    return identity;
+    // Only the newest started read can commit cache state or renew its lifetime.
+    // A failed refresh preserves the established cache and fences older reads.
+    if (owner === identityRequestOwner) {
+      capabilities = snapshot;
+      expires = Date.now() + capabilitiesTtlMs;
+      cachedIdentityOwner = owner;
+    }
+    return { identity, snapshot, owner };
   };
+  const getIdentity = async (options?: RequestOptions): Promise<BotIdentity> =>
+    (await readIdentity(options)).identity;
   return {
     /** Fetch the authenticated bot identity. */
     getIdentity,
@@ -105,7 +116,12 @@ export function createBotClient(
         throw new BotError("aborted", "Request aborted.");
       if (options.refresh || Date.now() >= expires) {
         const { refresh: _refresh, ...requestOptions } = options;
-        await getIdentity(requestOptions);
+        const result = await readIdentity(requestOptions);
+        // A pending newer read must not erase this caller's known response.
+        // Prefer a newer completed cache, including an explicit unknown value.
+        return cachedIdentityOwner > result.owner
+          ? capabilities
+          : result.snapshot;
       }
       return capabilities;
     },

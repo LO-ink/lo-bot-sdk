@@ -338,7 +338,8 @@ export function validateFilePath(path: string): void {
     (/^[a-z][a-z0-9+.-]*:/i.test(decoded) &&
       !/^(?:photo:[1-9]\d{0,18}:[A-Za-z0-9_-]{1,32}|(?:file|voice|audio):[1-9]\d{0,18}|video:-?[1-9]\d{0,18}):[A-Za-z0-9_-]{22}$/.test(
         decoded,
-      ))
+      ) &&
+      !/^secretary-v1:[A-Za-z0-9_-]+:[A-Za-z0-9_-]{22}$/.test(decoded))
   )
     fail("Expected a relative LO file path without traversal.");
 }

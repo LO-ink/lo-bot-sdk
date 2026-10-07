@@ -146,7 +146,8 @@ Secretary messages may include `caption`, `attachments`, `albumId` and
 `mediaStatus`. Supported incoming files use `secretary-v1` read capabilities
 bound to their connection, chat, policy and exact source revision. `getFile(fileId)`
 returns a relative `path` and `expiresAt`; download from the Bot API's authenticated
-`/file/bot<TOKEN>/<path>` route. Each GET checks current consent again. URLs last
+`/file/bot<TOKEN>/<path>` route using `bot.downloadFile({ path: file.path })`,
+where `bot` and the Secretary client share the same transport. Each GET checks current consent again. URLs last
 five minutes and downloads are capped at 50 MiB. File references cannot be used as
 ordinary bot media grants. `unsupported` and `unavailable` media statuses carry no
 usable file grant. The reference bot deliberately answers text only.

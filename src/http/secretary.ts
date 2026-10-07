@@ -638,10 +638,13 @@ export function normalizeSecretaryResult<K extends keyof SecretaryOperations>(
       integer(body.lo_source_message_id) !==
         inputDraft.context.sourceMessageId ||
       body.text !== inputDraft.text ||
+      typeof body.state !== "string" ||
       !["draft", "approved", "sent", "cancelled", "expired"].includes(
-        String(body.state),
+        body.state,
       ) ||
-      !["review", "auto"].includes(String(body.mode)) ||
+      typeof body.mode !== "string" ||
+      !["review", "auto"].includes(body.mode) ||
+      typeof body.reason !== "string" ||
       ![
         "template",
         "manual_review",
@@ -651,7 +654,7 @@ export function normalizeSecretaryResult<K extends keyof SecretaryOperations>(
         "source_changed",
         "manual_takeover",
         "superseded",
-      ].includes(String(body.reason)) ||
+      ].includes(body.reason) ||
       typeof body.date !== "number" ||
       !Number.isSafeInteger(body.date) ||
       body.date <= 0 ||
@@ -672,7 +675,7 @@ export function normalizeSecretaryResult<K extends keyof SecretaryOperations>(
       state: body.state as SecretaryDraft["state"],
       mode: body.mode as SecretaryDraft["mode"],
       text: inputDraft.text,
-      reason: body.reason as string,
+      reason: body.reason,
       createdAt: body.date,
       expiresAt: body.expires_at,
       secretaryBotId: integer(body.lo_secretary_bot_id, 9007199254740991n),

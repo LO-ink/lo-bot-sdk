@@ -81,6 +81,11 @@ test("draft receipts cannot substitute another chat, owner scope, text or auto o
     { state: "sent" },
     { lo_revision: 0 },
     { lo_secretary_bot_id: "12" },
+    ...["state", "mode", "reason"].flatMap((field) =>
+      [[receipt[field]], [[receipt[field]]], null, {}, 1, true].map(
+        (value) => ({ [field]: value }),
+      ),
+    ),
   ]) {
     const client = createSecretaryClient(
       transport(() => ({ ...receipt, ...change })),
@@ -298,6 +303,129 @@ function scopedFile(sourceContext = wireContext, expiry, mediaId = 77) {
   };
   return `secretary-v1:${Buffer.from(JSON.stringify(descriptor)).toString("base64url")}:${"x".repeat(22)}`;
 }
+
+test("secretary file metadata downloads through the shared authenticated bounded stream", async () => {
+  const fileId = scopedFile();
+  const path = scopedFile(wireContext, 1700000310);
+  const token = "42:" + "A".repeat(43);
+  let downloads = 0;
+  const http = createLoHttpBotTransport({
+    token,
+    fetch: async (url, options) => {
+      if (options.method === "POST") {
+        assert.equal(url, `https://api.lo.ink/bot${token}/getFile`);
+        assert.deepEqual(JSON.parse(options.body), { file_id: fileId });
+        return Response.json({
+          ok: true,
+          result: {
+            file_id: fileId,
+            file_unique_id: `secretary:${"a".repeat(64)}`,
+            file_path: path,
+            lo_expires_at: 1700000310,
+          },
+        });
+      }
+      downloads++;
+      assert.equal(
+        url,
+        `https://api.lo.ink/file/bot${token}/${encodeURIComponent(path)}`,
+      );
+      assert.equal(options.redirect, "manual");
+      assert.ok(options.signal instanceof AbortSignal);
+      return new Response(new Uint8Array([1, 2, 3]));
+    },
+  });
+  const file = await createSecretaryClient(http).getFile(fileId);
+  const bot = createBotClient(http);
+  for (const downloadPath of [file.path, encodeURIComponent(file.path)]) {
+    const stream = await bot.downloadFile({ path: downloadPath, maxBytes: 3 });
+    assert.deepEqual(
+      new Uint8Array(await new Response(stream).arrayBuffer()),
+      new Uint8Array([1, 2, 3]),
+    );
+  }
+  assert.equal(downloads, 2);
+});
+
+test("secretary download paths retain strict scheme and traversal rejection", async () => {
+  let requests = 0;
+  const bot = createBotClient(
+    createLoHttpBotTransport({
+      token: "42:" + "A".repeat(43),
+      fetch: async () => {
+        requests++;
+        throw new Error("Invalid paths must not reach fetch");
+      },
+    }),
+  );
+  const valid = scopedFile(wireContext, 1700000310);
+  for (const path of [
+    "secretary-v1::" + "x".repeat(22),
+    "secretary-v1:abc:" + "x".repeat(21),
+    "secretary-v1:abc:" + "x".repeat(23),
+    "secretary-v1:ab=c:" + "x".repeat(22),
+    "secretary-v2:abc:" + "x".repeat(22),
+    valid + ":extra",
+    valid + "/../private",
+    valid + "%2f..%2fprivate",
+    valid + "%252f..%252fprivate",
+    valid + "?query",
+    valid + "#fragment",
+    valid + "\\private",
+    valid + "%00",
+    "https://example.test/" + valid,
+    "//example.test/" + valid,
+    "secretary-v1:" + "a".repeat(4096) + ":" + "x".repeat(22),
+  ]) {
+    await assert.rejects(bot.downloadFile({ path }), { code: "invalid-input" });
+  }
+  assert.equal(requests, 0);
+});
+
+test("secretary downloads retain redirect refusal and streaming size limits", async () => {
+  const path = scopedFile(wireContext, 1700000310);
+  const token = "42:" + "A".repeat(43);
+  const redirect = createBotClient(
+    createLoHttpBotTransport({
+      token,
+      fetch: async (_url, options) => {
+        assert.equal(options.redirect, "manual");
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://example.test/private" },
+        });
+      },
+    }),
+  );
+  await assert.rejects(
+    redirect.downloadFile({ path }),
+    (error) => error.code === "transport" && !String(error).includes(token),
+  );
+  let cancelled = 0;
+  const bounded = createBotClient(
+    createLoHttpBotTransport({
+      token,
+      fetch: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1, 2]));
+              controller.enqueue(new Uint8Array([3, 4]));
+            },
+            cancel() {
+              cancelled++;
+            },
+          }),
+        ),
+    }),
+  );
+  const reader = (
+    await bounded.downloadFile({ path, maxBytes: 3 })
+  ).getReader();
+  assert.deepEqual((await reader.read()).value, new Uint8Array([1, 2]));
+  await assert.rejects(reader.read(), { code: "invalid-response" });
+  assert.equal(cancelled, 1);
+});
 
 test("secretary albums preserve every scoped attachment and caption; foreign source files fail closed", () => {
   const photo = {

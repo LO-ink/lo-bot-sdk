@@ -86,34 +86,12 @@ export function createBotClient(
     async getCapabilities(
       options: RequestOptions & { refresh?: boolean } = {},
     ) {
-      if (
-        !options ||
-        typeof options !== "object" ||
-        Array.isArray(options) ||
-        (options.signal !== undefined &&
-          !(options.signal instanceof AbortSignal))
-      )
-        throw new BotError(
-          "invalid-input",
-          "Expected capability request options.",
-        );
-      if (
-        options.timeoutMs !== undefined &&
-        (!Number.isFinite(options.timeoutMs) ||
-          options.timeoutMs <= 0 ||
-          options.timeoutMs > 2_147_483_647)
-      )
-        throw new BotError(
-          "invalid-input",
-          "Invalid capability request deadline.",
-        );
+      validateRequestOptions(options, identityTimeoutMs);
       if (options.refresh !== undefined && typeof options.refresh !== "boolean")
         throw new BotError(
           "invalid-input",
           "Expected a boolean capability refresh option.",
         );
-      if (options.signal?.aborted)
-        throw new BotError("aborted", "Request aborted.");
       if (options.refresh || Date.now() >= expires) {
         const { refresh: _refresh, ...requestOptions } = options;
         const result = await readIdentity(requestOptions);

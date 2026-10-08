@@ -2,15 +2,12 @@ import { interactionUpdate } from "./interactions.js";
 import { wireReplyMarkup, wireMenuButton } from "./keyboard.js";
 import { mediaRequest, albumRequest } from "./media.js";
 import { downloadFileStream } from "./download.js";
+import { httpFailure, positiveInteger, retryAfter } from "./failure.js";
 import {
   BotApiError as HttpBotError,
-  RateLimited,
-  NotAllowed,
-  BadRequest,
   Unavailable,
   type BotFailureDetails,
   type BotFailureReason,
-  type BotErrorCode,
 } from "../errors.js";
 import {
   validateReplyMarkup,
@@ -426,69 +423,6 @@ function wireRequest<K extends keyof BotOperations>(
   }
 }
 
-function canonicalCode(platformCode: number): BotErrorCode {
-  switch (platformCode) {
-    case 400:
-      return "invalid-input";
-    case 401:
-      return "unauthenticated";
-    case 403:
-      return "forbidden";
-    case 404:
-      return "not-found";
-    case 409:
-      return "conflict";
-    case 429:
-      return "rate-limited";
-    case 501:
-      return "unsupported";
-    default:
-      return platformCode >= 500 ? "unavailable" : "transport";
-  }
-}
-
-function errorMessage(code: BotErrorCode): string {
-  switch (code) {
-    case "invalid-input":
-      return "LO Bot API rejected the request.";
-    case "unauthenticated":
-      return "LO Bot API rejected the bot credential.";
-    case "forbidden":
-      return "LO Bot API denied the operation.";
-    case "not-found":
-      return "LO Bot API could not find the requested resource.";
-    case "conflict":
-      return "LO Bot API reported an operation conflict.";
-    case "rate-limited":
-      return "LO Bot API rate limit was reached.";
-    case "unsupported":
-      return "LO Bot API does not support the operation.";
-    case "unavailable":
-      return "LO Bot API is unavailable.";
-    default:
-      return "LO Bot API request failed.";
-  }
-}
-
-function positiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
-    ? value
-    : undefined;
-}
-
-function retryAfter(
-  envelope: Record<string, unknown> | null,
-  response: Response,
-): number | undefined {
-  const parameters = record(envelope?.parameters);
-  const fromBody = positiveInteger(parameters?.retry_after);
-  if (fromBody !== undefined) return fromBody;
-  const header = response.headers.get("retry-after");
-  if (!header || !/^[0-9]+$/.test(header)) return undefined;
-  const parsed = Number(header);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
 async function responseText(response: Response): Promise<string> {
   if (!response.body) return "";
   const reader = response.body.getReader();
@@ -692,39 +626,16 @@ export function createLoHttpBotTransport(
         : {}),
       ...(safeToRetry ? { safeToRetry: true } : {}),
     };
-    if (platformCode === 429)
-      return new RateLimited(retry, status, platformCode, details);
-    if (platformCode === 403) return new NotAllowed(status, platformCode);
-    if (platformCode === 400) {
-      const safeDescription =
-        typeof description === "string"
-          ? description
-              .split(token)
-              .join("[redacted]")
-              .replace(/[1-9][0-9]*(?::|%3[aA])[A-Za-z0-9_-]+/g, "[redacted]")
-              .replace(/https?:\/\/[^\s]+/g, "[URL]")
-              .slice(0, 1024)
-          : undefined;
-      return new BadRequest(safeDescription, status, platformCode, details);
-    }
-    const code = canonicalCode(platformCode);
-    if (platformCode >= 500)
-      return new Unavailable(
-        errorMessage(code),
-        status,
-        platformCode,
-        code === "unsupported" ? "unsupported" : "unavailable",
-        platformCode === 501
-          ? { ...details, reason: details.reason ?? "method_not_implemented" }
-          : details,
-      );
-    return new HttpBotError(
-      code,
-      errorMessage(code),
-      status,
-      platformCode,
-      retry,
-    );
+    const safeDescription =
+      platformCode === 400 && typeof description === "string"
+        ? description
+            .split(token)
+            .join("[redacted]")
+            .replace(/[1-9][0-9]*(?::|%3[aA])[A-Za-z0-9_-]+/g, "[redacted]")
+            .replace(/https?:\/\/[^\s]+/g, "[URL]")
+            .slice(0, 1024)
+        : undefined;
+    return httpFailure(status, platformCode, retry, safeDescription, details);
   }
 
   async function executeHttp(
@@ -801,7 +712,7 @@ export function createLoHttpBotTransport(
         throw apiError(
           response.status,
           response.status,
-          retryAfter(null, response),
+          retryAfter(undefined, response),
         );
       }
       if (error instanceof HttpBotError) {
@@ -837,7 +748,7 @@ export function createLoHttpBotTransport(
       throw apiError(
         response.status,
         platformCode,
-        retryAfter(envelope, response),
+        retryAfter(record(envelope.parameters)?.retry_after, response),
         envelope.description,
         envelope.parameters,
         response.status === 429 &&

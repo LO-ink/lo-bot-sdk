@@ -41,10 +41,6 @@ wire serialization and credential redaction. It never retries a mutation after
 an uncertain delivery. `parseLoBotWebhookUpdate` parses normalized updates;
 authenticate webhook requests before parsing or trusting them.
 
-Version 0.5 includes the native HTTP implementation previously published as
-`@lo-ink/bot-http-lo`. The 0.6 adapter is an optional compatibility re-export;
-new LO applications require only this SDK.
-
 Identifiers are decimal strings. Do not convert them to JavaScript numbers. The default deadline covers polling waits up to 30 seconds. Each call can override the deadline and supply an `AbortSignal`.
 
 The client does not retry sends: a network failure can occur after the server stores a message. Retrying a send can create a duplicate. Polling callers advance the cursor only after durable processing, and coordinate a single owner for each bot's polling stream.
@@ -60,7 +56,7 @@ npm test
 npm pack --dry-run
 ```
 
-Native transport tests run with the client tests. External integrations and compatibility re-exports are maintained in [lo-platform-adapters](https://github.com/lo-ink/lo-platform-adapters).
+Native HTTP transport tests run with the client tests and packed-package checks.
 
 ## LO-native secretary extension
 
@@ -137,8 +133,8 @@ never generate a replacement key. `BotError.code` classifies `forbidden`,
 `conflict`, `invalid-input`, `rate-limited`, `timeout`, `aborted` and transport
 failures. Respect `retryAfterSeconds`; do not log upstream bodies or credentials.
 
-The [LO HTTP adapter and reference bot](https://github.com/lo-ink/lo-platform-adapters/tree/main/examples/secretary)
-show polling and authenticated webhooks, private durable state, replay handling,
+The [LO-native reference bot](https://github.com/lo-ink/lo-platform-adapters/tree/main/examples/secretary)
+shows polling and authenticated webhooks, private durable state, replay handling,
 revoke and explicit per-chat auto opt-in. This is LO-native delegation: familiar
 Secretary rights apply only to the LO connection and owner consent recorded by the server.
 
@@ -190,7 +186,7 @@ payloads cannot authorize an automatic rule.
 
 ## Open a mini-app from a bot
 
-Requires `@lo-ink/bot-http-lo` 0.4.0 or a transport implementing the new operations.
+The included native HTTP transport supports registered Mini App buttons and menus.
 
 ```ts
 await bot.sendMessage({
@@ -251,12 +247,12 @@ retry: another upload can create another message, and uploads lack Idempotency-K
 
 ## Error decisions and send limits
 
-| Error class                                                   | Existing code                                                       | Application decision                                              |
-| ------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `RateLimited` with `retryAfterSec` (also `retryAfterSeconds`) | `rate-limited`                                                      | Schedule after `parameters.retry_after`; no automatic retry       |
-| `NotAllowed`                                                  | `forbidden`                                                         | Stop sending and revoke stored consent                            |
-| `BadRequest` with sanitized `description`                     | `invalid-input`                                                     | Fix the request; do not blindly repeat                            |
-| `Unavailable`                                                 | `unavailable`, legacy network `transport`, or `unsupported` for 501 | Back off; account for an ambiguous outcome and possible duplicate |
+| Error class                                                   | Existing code                                                | Application decision                                              |
+| ------------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `RateLimited` with `retryAfterSec` (also `retryAfterSeconds`) | `rate-limited`                                               | Schedule after `parameters.retry_after`; no automatic retry       |
+| `NotAllowed`                                                  | `forbidden`                                                  | Stop sending and revoke stored consent                            |
+| `BadRequest` with sanitized `description`                     | `invalid-input`                                              | Fix the request; do not blindly repeat                            |
+| `Unavailable`                                                 | `unavailable`, network `transport`, or `unsupported` for 501 | Back off; account for an ambiguous outcome and possible duplicate |
 
 All extend `BotError`; API failures also extend `BotApiError`, exported by the
 HTTP transport as the existing `HttpBotError`. Local validation remains
@@ -299,13 +295,13 @@ if (file.path) {
 
 Video metadata and thumbnails apply only to uploads. Video uploads depend on the installation; audio uploads are unavailable. `sendAudio` accepts only `fileId`. Albums require 2–10 photos or 2–10 documents, with one caption on the first item. Cached document references must be distinct. LO stores an album as one message: its returned items may share a message ID.
 
-Video defaults to a 90-second request deadline because transcoding can wait 45 seconds. An explicit client or request deadline takes precedence. Other calls retain their 35-second default. File downloads stay on the authenticated LO file route, refuse redirects and stop at 50 MiB by default. A missing `path` means this media has no direct downloadable file.
+Video defaults to a 90-second request deadline because transcoding can wait 45 seconds. An explicit client or request deadline takes precedence. Other calls retain their 35-second default. File downloads stay on the authenticated LO file route, refuse redirects and stop at 50 MiB by default. A missing `path` means this media has no direct downloadable file. Download refusals use the same HTTP error categories as API calls, including `unauthenticated` for 401, `RateLimited` for 429 and `unsupported` for 501. Valid positive integer `Retry-After` headers provide retry guidance; error bodies and credential URLs are never exposed, and downloads are not retried automatically.
 
 `getIdentity()` exposes group-reading and inline-query flags. `capabilities` is optional: absence means unknown, never disabled. Installation features must be discovered or refreshed by the transport/application.
 
-`BotApiError.details` carries structured `parameter` and `reason` when provided. Older descriptions are classified only in the LO HTTP adapter. `retryRejected(() => bot.sendVideo(input))` is opt-in and retries once after an explicit 429 refusal marked `safeToRetry`, within `maxWaitSeconds` (30 by default). It never retries network failures or uncertain outcomes. The operation must create a fresh stream for each attempt or use replayable bytes/Blob.
+`BotApiError.details` carries structured `parameter` and `reason` when provided. Server descriptions are classified only in the native HTTP transport. `retryRejected(() => bot.sendVideo(input))` is opt-in and retries once after an explicit 429 refusal marked `safeToRetry`, within `maxWaitSeconds` (30 by default). It never retries network failures or uncertain outcomes. The operation must create a fresh stream for each attempt or use replayable bytes/Blob.
 
-Version 0.4 uses native LO keyboard fields (`inlineKeyboard`, `callbackData`, `miniApp`, `resize`, `oneTime`, `persistent`, `placeholder`). Menu app buttons use `type: "miniApp"`. The HTTP adapter owns server serialization. Update 0.3 keyboard objects when upgrading both packages.
+Version 0.4 uses native LO keyboard fields (`inlineKeyboard`, `callbackData`, `miniApp`, `resize`, `oneTime`, `persistent`, `placeholder`). Menu app buttons use `type: "miniApp"`. The included HTTP transport owns server serialization. Update older keyboard objects when upgrading the SDK.
 
 Call `await bot.getCapabilities()` at startup and before jobs that depend on installation features. Results refresh on demand after five minutes; `getCapabilities({refresh: true})` bypasses the cache. `undefined` on older servers means unknown. Bot permissions remain separate identity fields. No background polling or timers are installed.
 

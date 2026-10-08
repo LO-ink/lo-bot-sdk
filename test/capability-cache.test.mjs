@@ -145,3 +145,44 @@ test("identity validation retains the timeout captured when the client was creat
   assert.deepEqual(await bot.getCapabilities(), { videoUploads: true });
   assert.equal(calls, 1);
 });
+
+test("capability request options have the same validation before, during and after caching", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1000 });
+  let calls = 0;
+  const bot = createBotClient({
+    execute: async () => {
+      calls++;
+      return { id: "7", name: "Fixture", capabilities: { videoUploads: true } };
+    },
+  });
+  for (const phase of ["cold", "warm", "refresh", "expired"]) {
+    if (phase === "warm") await bot.getCapabilities();
+    if (phase === "expired") t.mock.timers.tick(300_000);
+    const refresh = phase === "refresh";
+    for (const options of [
+      null,
+      [],
+      { timeoutMs: 0.5, refresh },
+      { timeoutMs: 0, refresh },
+      { timeoutMs: Infinity, refresh },
+      { timeoutMs: 2_147_483_648, refresh },
+      { signal: {}, refresh },
+      { refresh: "yes" },
+    ]) {
+      await assert.rejects(bot.getCapabilities(options), {
+        code: "invalid-input",
+      });
+    }
+    await assert.rejects(
+      bot.getCapabilities({ signal: AbortSignal.abort(), refresh }),
+      {
+        code: "aborted",
+      },
+    );
+    assert.equal(calls, phase === "cold" ? 0 : 1);
+  }
+  assert.deepEqual(await bot.getCapabilities({ timeoutMs: 1 }), {
+    videoUploads: true,
+  });
+  assert.equal(calls, 2);
+});

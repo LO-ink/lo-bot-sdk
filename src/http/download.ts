@@ -1,4 +1,5 @@
 import { BotError, BotApiError, Unavailable } from "../errors.js";
+import { httpFailure, retryAfter } from "./failure.js";
 import { validateFilePath } from "../validation.js";
 import { type BotOperations } from "../types.js";
 
@@ -41,19 +42,14 @@ export async function downloadFileStream(
     (length !== null && (!/^\d+$/.test(length) || Number(length) > max))
   ) {
     await response.body?.cancel().catch(() => {});
-    if (response.status >= 500)
-      throw new Unavailable(
-        "LO file download is unavailable.",
+    if (!response.ok)
+      throw httpFailure(
         response.status,
+        response.status,
+        retryAfter(undefined, response),
       );
     throw new BotApiError(
-      response.ok
-        ? "invalid-response"
-        : response.status === 403
-          ? "forbidden"
-          : response.status === 404
-            ? "not-found"
-            : "transport",
+      "invalid-response",
       "LO file download was refused.",
       response.status,
     );

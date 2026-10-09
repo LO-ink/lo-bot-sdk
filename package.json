@@ -1,6 +1,6 @@
 {
   "name": "@lo-ink/bot-sdk",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Typed server-side bot client for LO",
   "type": "module",
   "license": "MIT",

@@ -13,7 +13,6 @@ export type {
   SecretaryQuote,
   SecretaryUpdate,
   SecretaryAction,
-  SecretaryDraft,
   SecretaryOperations,
   SecretaryTransport,
   SecretaryClient,

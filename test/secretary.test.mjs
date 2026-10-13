@@ -14,27 +14,15 @@ const input = {
   },
   text: "Thank you",
 };
-test("draft proposals preserve the scoped key and reject unknown reasons or excessive UTF-16 text before transport", async () => {
-  const calls = [];
+test("native reply proposals are absent from the secretary client", () => {
+  let calls = 0;
   const client = createSecretaryClient({
-    async executeSecretary(operation, value) {
-      calls.push([operation, value]);
-      return { id: "11111111-1111-4111-8111-111111111111", state: "draft" };
+    async executeSecretary() {
+      calls++;
     },
   });
-  await client.proposeDraft({ ...input, reason: "manual_review" });
-  assert.equal(calls[0][0], "proposeDraft");
-  assert.equal(calls[0][1].requestId, input.requestId);
-  for (const change of [
-    { reason: "auto" },
-    { text: "😀".repeat(2049) },
-    { requestId: "short" },
-  ])
-    await assert.rejects(
-      client.proposeDraft({ ...input, reason: "template", ...change }),
-      (error) => error.code === "invalid-input",
-    );
-  assert.equal(calls.length, 1);
+  assert.equal(Object.hasOwn(client, "proposeDraft"), false);
+  assert.equal(calls, 0);
 });
 test("secretary extension preserves exact version and stable keys without retrying unknown outcomes", async () => {
   const calls = [];

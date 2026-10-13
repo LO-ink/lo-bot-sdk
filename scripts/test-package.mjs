@@ -82,6 +82,20 @@ try {
     join(consumer, "check.ts"),
     `import { createLoBotClient, createLoSecretaryClient, createBotClient, type BotTransport, type Message, createSecretaryClient, type SecretaryTransport, type SecretaryContext } from '${name}';\ndeclare const transport: BotTransport;\nconst message: Promise<Message> = createBotClient(transport).sendMessage({conversationId:'1', text:'Hello'});\nvoid message;\nconst native = createLoBotClient({token:'42:test-token'});\nvoid native;\nconst nativeSecretary = createLoSecretaryClient({token:'42:test-token'});\nvoid nativeSecretary;\ndeclare const secretaryTransport: SecretaryTransport;\ndeclare const context: SecretaryContext;\nconst secretaryReply: Promise<Message> = createSecretaryClient(secretaryTransport).sendText({connectionId:'e8b392e9-4ddc-4992-a235-d9f36cd892fc', context, requestId:'stable-request-id', text:'Answer'});\nvoid secretaryReply;\n`,
   );
+  await writeFile(
+    join(consumer, "check.ts"),
+    `${await readFile(join(consumer, "check.ts"), "utf8")}
+// @ts-expect-error Native proposal receipts are retired in SDK 0.6.
+import type { SecretaryDraft } from '${name}';
+import type { SecretaryOperations } from '${name}';
+const secretary = createSecretaryClient(secretaryTransport);
+// @ts-expect-error No native proposal method or implicit send fallback.
+void secretary.proposeDraft;
+// @ts-expect-error The removed operation is not part of the transport contract.
+const retiredOperation: keyof SecretaryOperations = 'proposeDraft';
+void retiredOperation;
+`,
+  );
   for (const resolution of ["NodeNext", "Bundler"]) {
     run(
       process.execPath,

@@ -103,22 +103,6 @@ export interface SecretaryAction {
   /** 8..128 printable characters. Reuse exactly on an uncertain outcome. */
   readonly requestId: string;
 }
-export interface SecretaryDraft {
-  readonly id: string;
-  readonly connectionId: string;
-  readonly conversationId: Identifier;
-  readonly chatId: Identifier;
-  readonly sourceMessageId: Identifier;
-  readonly revision: string;
-  readonly state: "draft" | "approved" | "sent" | "cancelled" | "expired";
-  readonly mode: "review" | "auto";
-  readonly text: string;
-  readonly reason: string;
-  readonly createdAt: number;
-  readonly expiresAt: number;
-  readonly secretaryBotId: Identifier;
-  readonly messageId?: Identifier;
-}
 export interface SecretaryFileDownload {
   readonly fileId: string;
   readonly uniqueId: string;
@@ -127,13 +111,6 @@ export interface SecretaryFileDownload {
   readonly expiresAt: number;
 }
 export interface SecretaryOperations {
-  proposeDraft: {
-    input: SecretaryAction & {
-      text: string;
-      reason: "template" | "manual_review" | "cannot_answer";
-    };
-    output: SecretaryDraft;
-  };
   getFile: { input: { fileId: string }; output: SecretaryFileDownload };
   getConnection: {
     input: { connectionId: string };

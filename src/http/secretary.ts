@@ -5,7 +5,6 @@ import {
   type SecretaryConnection,
   type SecretaryContext,
   type SecretaryMessage,
-  type SecretaryDraft,
   type SecretaryOperations,
   type SecretaryRight,
   type SecretaryUpdate,
@@ -460,6 +459,18 @@ export function wireSecretaryRequest<K extends keyof SecretaryOperations>(
   operation: K,
   input: SecretaryOperations[K]["input"],
 ): { method: string; body: Record<string, unknown> } {
+  if (
+    ![
+      "getFile",
+      "getConnection",
+      "sendText",
+      "sendMedia",
+      "editText",
+      "markRead",
+      "deleteMessages",
+    ].includes(operation)
+  )
+    throw new BotError("unsupported", "Unsupported secretary operation.");
   if (operation === "getFile") {
     const value = input as SecretaryOperations["getFile"]["input"];
     return { method: "getFile", body: { file_id: value.fileId } };
@@ -486,18 +497,6 @@ export function wireSecretaryRequest<K extends keyof SecretaryOperations>(
     },
   };
   switch (operation) {
-    case "proposeDraft": {
-      const draft = input as SecretaryOperations["proposeDraft"]["input"];
-      return {
-        method: "proposeBusinessDraft",
-        body: {
-          ...body,
-          chat_id: draft.context.chatId,
-          text: draft.text,
-          lo_draft_reason: draft.reason,
-        },
-      };
-    }
     case "sendText":
       return {
         method: "sendMessage",
@@ -590,7 +589,7 @@ export function normalizeSecretaryResult<K extends keyof SecretaryOperations>(
   input: SecretaryOperations[K]["input"],
   value: unknown,
 ): SecretaryOperations[K]["output"] {
-  let result: SecretaryConnection | SecretaryMessage | SecretaryDraft | boolean;
+  let result: SecretaryConnection | SecretaryMessage | boolean;
   if (operation === "getFile") {
     const body = record(value);
     const expected = (input as SecretaryOperations["getFile"]["input"]).fileId;
@@ -627,65 +626,7 @@ export function normalizeSecretaryResult<K extends keyof SecretaryOperations>(
       value,
       (input as SecretaryOperations["getConnection"]["input"]).connectionId,
     );
-  else if (operation === "proposeDraft") {
-    const inputDraft = input as SecretaryOperations["proposeDraft"]["input"];
-    const body = record(value);
-    if (
-      uuid(body.business_connection_id) !== inputDraft.connectionId ||
-      integer(body.lo_conversation_id, 2147483647n) !==
-        inputDraft.context.conversationId ||
-      integer(body.chat_id, 999999999999999n) !== inputDraft.context.chatId ||
-      integer(body.lo_source_message_id) !==
-        inputDraft.context.sourceMessageId ||
-      body.text !== inputDraft.text ||
-      typeof body.state !== "string" ||
-      !["draft", "approved", "sent", "cancelled", "expired"].includes(
-        body.state,
-      ) ||
-      typeof body.mode !== "string" ||
-      !["review", "auto"].includes(body.mode) ||
-      typeof body.reason !== "string" ||
-      ![
-        "template",
-        "manual_review",
-        "cannot_answer",
-        "owner_cancelled",
-        "policy_changed",
-        "source_changed",
-        "manual_takeover",
-        "superseded",
-      ].includes(body.reason) ||
-      typeof body.date !== "number" ||
-      !Number.isSafeInteger(body.date) ||
-      body.date <= 0 ||
-      typeof body.expires_at !== "number" ||
-      !Number.isSafeInteger(body.expires_at) ||
-      body.expires_at <= body.date ||
-      (body.state === "sent") !== (body.message_id !== undefined) ||
-      (body.mode === "auto" && body.state !== "sent")
-    )
-      return invalid();
-    result = {
-      id: uuid(body.lo_draft_id),
-      connectionId: inputDraft.connectionId,
-      conversationId: inputDraft.context.conversationId,
-      chatId: inputDraft.context.chatId,
-      sourceMessageId: inputDraft.context.sourceMessageId,
-      revision: integer(body.lo_revision),
-      state: body.state as SecretaryDraft["state"],
-      mode: body.mode as SecretaryDraft["mode"],
-      text: inputDraft.text,
-      reason: body.reason,
-      createdAt: body.date,
-      expiresAt: body.expires_at,
-      secretaryBotId: integer(body.lo_secretary_bot_id, 9007199254740991n),
-      ...(body.message_id === undefined
-        ? {}
-        : { messageId: integer(body.message_id) }),
-    } satisfies SecretaryDraft;
-    if (BigInt((result as SecretaryDraft).secretaryBotId) < 1000000000000000n)
-      return invalid();
-  } else if (
+  else if (
     operation === "sendText" ||
     operation === "editText" ||
     operation === "sendMedia"

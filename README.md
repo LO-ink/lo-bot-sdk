@@ -90,19 +90,21 @@ export async function sendApprovedReply(
 ) {
   if (update.kind !== "secretary_message" || update.message.secretaryBotId)
     return;
+  const { connectionId, senderId } = update.message;
+  const context = { ...update.context };
   const secretary = createSecretaryClient(transport);
-  const connection = await secretary.getConnection(update.message.connectionId);
+  const connection = await secretary.getConnection(connectionId);
   if (
     !connection.enabled ||
-    connection.policyVersion !== update.context.policyVersion ||
-    connection.ownerId === update.message.senderId ||
+    connection.policyVersion !== context.policyVersion ||
+    connection.ownerId === senderId ||
     !connection.rights.includes("receive_messages") ||
     !connection.rights.includes("send_messages")
   )
     return;
   return secretary.sendText({
     connectionId: connection.id,
-    context: update.context,
+    context,
     requestId, // Persist this exact key, source context and text before sending.
     text,
   });

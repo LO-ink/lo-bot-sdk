@@ -23,78 +23,40 @@ const wireContext = {
   source_revision: "4",
 };
 const scope = { connectionId, context, requestId: "stable-action-id" };
-test("draft proposals use the review endpoint and decode exact scoped receipts", async () => {
-  const receipt = {
-    lo_draft_id: "11111111-1111-4111-8111-111111111111",
-    business_connection_id: connectionId,
-    lo_conversation_id: context.conversationId,
-    chat_id: context.chatId,
-    lo_source_message_id: context.sourceMessageId,
-    lo_revision: "1",
-    state: "draft",
-    mode: "review",
-    text: "proposed",
-    reason: "manual_review",
-    date: 1700000000,
-    expires_at: 1700086400,
-    lo_secretary_bot_id: "1000000000000042",
-  };
-  const client = createSecretaryClient(
-    transport((method, body) => {
-      assert.equal(method, "proposeBusinessDraft");
-      assert.equal(body.lo_request_id, scope.requestId);
-      assert.equal(body.lo_draft_reason, "manual_review");
-      assert.equal(body.lo_context.policy_version, context.policyVersion);
-      return receipt;
-    }),
-  );
-  const result = await client.proposeDraft({
-    ...scope,
-    text: "proposed",
-    reason: "manual_review",
+test("removed native proposal operations fail before fetch without a send fallback", async () => {
+  let requests = 0;
+  const native = createLoHttpBotTransport({
+    token: "42:test-token",
+    fetch: async () => {
+      requests++;
+      throw new Error("unexpected request");
+    },
   });
-  assert.equal(result.state, "draft");
-  assert.equal(result.sourceMessageId, context.sourceMessageId);
-  assert.equal(result.messageId, undefined);
-});
-test("draft receipts cannot substitute another chat, owner scope, text or auto outcome", async () => {
-  const receipt = {
-    lo_draft_id: "11111111-1111-4111-8111-111111111111",
-    business_connection_id: connectionId,
-    lo_conversation_id: context.conversationId,
-    chat_id: context.chatId,
-    lo_source_message_id: context.sourceMessageId,
-    lo_revision: "1",
-    state: "draft",
-    mode: "review",
-    text: "proposed",
-    reason: "template",
-    date: 1700000000,
-    expires_at: 1700086400,
-    lo_secretary_bot_id: "1000000000000042",
+  let payloadReads = 0;
+  const guardedInput = {
+    get connectionId() {
+      payloadReads++;
+      throw new Error("unexpected payload access");
+    },
   };
-  for (const change of [
-    { business_connection_id: "11111111-1111-4111-8111-111111111111" },
-    { chat_id: "99" },
-    { text: "other" },
-    { mode: "auto" },
-    { state: "sent" },
-    { lo_revision: 0 },
-    { lo_secretary_bot_id: "12" },
-    ...["state", "mode", "reason"].flatMap((field) =>
-      [[receipt[field]], [[receipt[field]]], null, {}, 1, true].map(
-        (value) => ({ [field]: value }),
-      ),
-    ),
-  ]) {
-    const client = createSecretaryClient(
-      transport(() => ({ ...receipt, ...change })),
-    );
+  for (const input of [
+    undefined,
+    null,
+    {},
+    guardedInput,
+    { business_connection_id: connectionId, lo_context: wireContext },
+    { ...scope, text: "legacy pending", reason: "manual_review" },
+  ])
     await assert.rejects(
-      client.proposeDraft({ ...scope, text: "proposed", reason: "template" }),
-      (error) => error.code === "invalid-response",
+      native.executeSecretary("proposeDraft", input),
+      (error) => error.code === "unsupported",
     );
-  }
+  await assert.rejects(
+    native.executeSecretary("unknownOperation", guardedInput),
+    (error) => error.code === "unsupported",
+  );
+  assert.equal(payloadReads, 0);
+  assert.equal(requests, 0);
 });
 const connection = {
   id: connectionId,

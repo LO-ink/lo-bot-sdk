@@ -80,39 +80,45 @@ import {
   type SecretaryUpdate,
 } from "@lo-ink/bot-sdk";
 
-export async function proposeForReview(
+// Invoke only after the bot has authenticated the owner's approval and
+// atomically claimed the exact persisted proposal. Approval lives in the bot.
+export async function sendApprovedReply(
   transport: SecretaryTransport,
   update: SecretaryUpdate,
   requestId: string,
+  text: string,
 ) {
   if (update.kind !== "secretary_message" || update.message.secretaryBotId)
     return;
+  const { connectionId, senderId } = update.message;
+  const context = { ...update.context };
   const secretary = createSecretaryClient(transport);
-  const connection = await secretary.getConnection(update.message.connectionId);
+  const connection = await secretary.getConnection(connectionId);
   if (
     !connection.enabled ||
-    connection.policyVersion !== update.context.policyVersion ||
-    connection.ownerId === update.message.senderId ||
+    connection.policyVersion !== context.policyVersion ||
+    connection.ownerId === senderId ||
     !connection.rights.includes("receive_messages") ||
     !connection.rights.includes("send_messages")
   )
     return;
-  return secretary.proposeDraft({
+  return secretary.sendText({
     connectionId: connection.id,
-    context: update.context,
-    requestId, // Persist before sending; reuse the same key and body on uncertainty.
-    text: "Your message was received. The owner will review this reply.",
-    reason: "manual_review",
+    context,
+    requestId, // Persist this exact key, source context and text before sending.
+    text,
   });
 }
 ```
 
-This example creates a proposal. The human owner approves it in LO. For durable
-processing, commit the complete request before calling the client and restore
-that exact input after a restart. Direct `sendText` is a separate operation under
-explicit send permission; it does not provide a universal approval gate.
-See the [Secretary integration guide](https://github.com/LO-ink/lo-developer-tools/blob/main/docs/secretary.md)
-and the [CI-checked review example](https://github.com/LO-ink/lo-platform-adapters/blob/main/examples/secretary-review.ts).
+AI replies, pending proposals and their approval belong to the bot application.
+Present the proposal in the owner's private bot chat; authenticate the callback,
+match the owner and exact proposal/message, and atomically claim that persisted
+proposal before calling this helper. An owner ID alone is not an approval proof.
+The helper rechecks delegated consent; it does not implement a universal approval
+gate. Retain the original context, text and request ID on uncertain outcomes,
+and retry only that already approved operation. Never turn a legacy native draft
+or an unapproved job into a delegated send.
 
 The server rechecks current consent, token generation, chat scope, source revision,
 manual takeover and the 24-hour incoming window at every action. A cached
@@ -133,10 +139,10 @@ never generate a replacement key. `BotError.code` classifies `forbidden`,
 `conflict`, `invalid-input`, `rate-limited`, `timeout`, `aborted` and transport
 failures. Respect `retryAfterSeconds`; do not log upstream bodies or credentials.
 
-The [LO-native reference bot](https://github.com/lo-ink/lo-platform-adapters/tree/main/examples/secretary)
-shows polling and authenticated webhooks, private durable state, replay handling,
-revoke and explicit per-chat auto opt-in. This is LO-native delegation: familiar
-Secretary rights apply only to the LO connection and owner consent recorded by the server.
+Examples written for the retired native review workflow are not compatible with
+SDK 0.6.0. Do not replay their pending jobs as sends. Bot-owned proposals need
+their own persisted approval and replay handling as described above. Secretary
+rights apply only to the LO connection and owner consent recorded by the server.
 
 Secretary messages may include `caption`, `attachments`, `albumId` and
 `mediaStatus`. Supported incoming files use `secretary-v1` read capabilities
@@ -146,7 +152,7 @@ returns a relative `path` and `expiresAt`; download from the Bot API's authentic
 where `bot` and the Secretary client share the same transport. Each GET checks current consent again. URLs last
 five minutes and downloads are capped at 50 MiB. File references cannot be used as
 ordinary bot media grants. `unsupported` and `unavailable` media statuses carry no
-usable file grant. The reference bot deliberately answers text only.
+usable file grant.
 
 `sendText` accepts an optional `quote: { text, offsetUtf16 }`, selecting at most
 1024 UTF-16 units of the **exact source message**. The server checks the fragment
@@ -165,24 +171,24 @@ Reuse the exact request ID/body after an uncertain outcome. The native reply
 store currently limits source IDs for sending to positive int32; larger IDs
 receive a typed unsupported response.
 
-### Review drafts and owner-controlled automatic templates
+### Bot-owned replies and native templates
 
-`client.proposeDraft({ connectionId, context, requestId, text, reason: 'manual_review' })`
-creates a text draft bound to the delivered source/context. Reasons are
-`template`, `manual_review`, or `cannot_answer`; text is at most 4096 UTF-16
-units. The receipt carries draft ID, revision, state, mode and expiry. Retry an
-uncertain result with the same request ID and identical input.
+SDK 0.6 removes `proposeDraft`, the `SecretaryDraft` type and the native proposal
+transport operation. `sendMessageDraft` is a separate ordinary progress API and
+is unchanged. Bots store and manage their own proposals, authenticated owner
+approvals, cancellation, expiry and recovery. Use delegated `sendText` only after
+the bot's approval policy permits that exact persisted reply; the server checks
+current permission and source context again.
 
-Review is the default for this proposal workflow. Only the human owner can
-approve/cancel drafts or enable a separate per-chat automatic rule in LO.
-Automatic mode requires the exact stored template, selected days/hours/timezone
-and cooldown. `cannot_answer` always needs review. Revocation, source changes,
-a newer incoming message and the owner's manual reply cancel pending drafts.
-Once a source has a draft, `sendText` cannot bypass its approval.
+Pause/revoke, a changed policy or source, a newer incoming message and manual
+owner takeover must invalidate pending bot proposals. Do not regenerate request
+IDs, replace source context, or fall back to a send after a rejected/unknown
+native proposal. Historical sources with platform draft tombstones can remain
+closed; use a new incoming source instead of bypassing the fence.
 
-The existing direct send methods remain available under the owner's explicit
-`send_messages` permission for sources without a draft. SDK settings and bot
-payloads cannot authorize an automatic rule.
+Owner-configured exact templates, schedules and cooldown remain native LO
+features. SDK settings, AI text and bot payloads cannot authorize an automatic
+rule. AI/Q&A replies and their management remain the bot developer's responsibility.
 
 ## Open a mini-app from a bot
 

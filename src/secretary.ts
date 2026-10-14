@@ -87,19 +87,6 @@ export function createSecretaryClient(
     options,
   );
   return {
-    async proposeDraft(
-      input: SecretaryOperations["proposeDraft"]["input"],
-      options?: RequestOptions,
-    ) {
-      action(input);
-      text(input.text);
-      if (input.text.length > 4096) invalid();
-      if (
-        !["template", "manual_review", "cannot_answer"].includes(input.reason)
-      )
-        invalid();
-      return request("proposeDraft", input, options);
-    },
     async getFile(fileId: string, options?: RequestOptions) {
       if (
         typeof fileId !== "string" ||

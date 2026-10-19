@@ -1,6 +1,8 @@
 import { BotError } from "./errors.js";
 import type {
   AlbumItem,
+  ChatAction,
+  SendOptions,
   ChatMenuButton,
   InputFile,
   ReplyMarkup,
@@ -30,6 +32,47 @@ function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     fail("Expected an object.");
   return value as Record<string, unknown>;
+}
+export function validateIdentifier(value: string, positive = false): void {
+  const pattern = positive ? /^[1-9][0-9]*$/ : /^-?[1-9][0-9]*$/;
+  if (
+    typeof value !== "string" ||
+    !pattern.test(value) ||
+    value.replace("-", "").length > 19 ||
+    BigInt(value) < -(2n ** 63n) ||
+    BigInt(value) > 2n ** 63n - 1n
+  )
+    throw new BotError("invalid-input", "Expected a valid decimal identifier.");
+}
+export function validateSendOptions(input: SendOptions): void {
+  const value = record(input);
+  if (
+    value.replyToMessageId !== undefined &&
+    (typeof value.replyToMessageId !== "string" ||
+      !/^[1-9][0-9]*$/.test(value.replyToMessageId) ||
+      Number(value.replyToMessageId) > 2147483647)
+  )
+    fail("Reply message ID must be a decimal string between 1 and 2147483647.");
+  for (const key of ["allowSendingWithoutReply", "disableNotification"])
+    if (value[key] !== undefined && typeof value[key] !== "boolean")
+      fail("Expected a boolean send option.");
+}
+export function validateChatAction(value: ChatAction): void {
+  const actions: readonly string[] = [
+    "typing",
+    "choose_sticker",
+    "find_location",
+    "record_voice",
+    "upload_voice",
+    "record_video",
+    "record_video_note",
+    "upload_photo",
+    "upload_video",
+    "upload_document",
+    "upload_video_note",
+  ] satisfies readonly ChatAction[];
+  if (typeof value !== "string" || !actions.includes(value))
+    fail("Expected a supported chat action.");
 }
 function url(value: unknown, httpsOnly: boolean): void {
   if (

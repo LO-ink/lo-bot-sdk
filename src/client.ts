@@ -1,6 +1,9 @@
 import { createOperationRequester, validateRequestOptions } from "./request.js";
 import {
   validateReplyMarkup,
+  validateSendOptions,
+  validateChatAction,
+  validateIdentifier as id,
   validateMenuButton,
   validateInputFile,
   validateCaption,
@@ -19,17 +22,6 @@ import type {
   RequestOptions,
 } from "./types.js";
 
-function id(value: string, positive = false): void {
-  const pattern = positive ? /^[1-9][0-9]*$/ : /^-?[1-9][0-9]*$/;
-  if (
-    typeof value !== "string" ||
-    !pattern.test(value) ||
-    value.replace("-", "").length > 19 ||
-    BigInt(value) < -(2n ** 63n) ||
-    BigInt(value) > 2n ** 63n - 1n
-  )
-    throw new BotError("invalid-input", "Expected a valid decimal identifier.");
-}
 function text(value: string): void {
   if (typeof value !== "string" || !value.trim() || value.length > 4096)
     throw new BotError(
@@ -80,7 +72,6 @@ export function createBotClient(
   const getIdentity = async (options?: RequestOptions): Promise<BotIdentity> =>
     (await readIdentity(options)).identity;
   return {
-    /** Fetch the authenticated bot identity. */
     getIdentity,
     /** Refresh installation flags on demand. Older servers may leave them unknown. */
     async getCapabilities(
@@ -103,7 +94,6 @@ export function createBotClient(
       }
       return capabilities;
     },
-    /** Complete a callback button action. */
     async answerCallback(
       input: BotOperations["answerCallback"]["input"],
       options?: RequestOptions,
@@ -130,6 +120,15 @@ export function createBotClient(
         throw new BotError("invalid-input", "Expected a boolean alert option.");
       return request("answerCallback", input, options);
     },
+    async sendChatAction(
+      input: BotOperations["sendChatAction"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      validateChatAction(input.action);
+      return request("sendChatAction", input, options);
+    },
     /** Send one plain-text message. Retrying can create another message. */
     async sendMessage(
       input: BotOperations["sendMessage"]["input"],
@@ -137,11 +136,11 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
+      validateSendOptions(input);
       text(input.text);
       validateReplyMarkup(input.replyMarkup, input.conversationId);
       return request("sendMessage", input, options);
     },
-    /** Replace the text of one stored message. */
     async editMessage(
       input: BotOperations["editMessage"]["input"],
       options?: RequestOptions,
@@ -159,6 +158,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
+      validateSendOptions(input);
       validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateCaption(input.caption);
       validateInputFile(input.photo, "photo");
@@ -170,6 +170,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
+      validateSendOptions(input);
       validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateVideo(input);
       return request("sendVideo", input, {
@@ -183,6 +184,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
+      validateSendOptions(input);
       validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateCaption(input.caption);
       validateInputFile(input.audio, "audio");
@@ -199,6 +201,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
+      validateSendOptions(input);
       validateAlbum(input.media);
       return request("sendMediaGroup", input, options);
     },
@@ -236,6 +239,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
+      validateSendOptions(input);
       validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateCaption(input.caption);
       validateInputFile(input.document, "document");
@@ -247,6 +251,7 @@ export function createBotClient(
     ) {
       object(input);
       id(input.conversationId);
+      validateSendOptions(input);
       validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       validateInputFile(input.voice, "voice");
       if (Object.hasOwn(input, "caption"))
@@ -265,7 +270,6 @@ export function createBotClient(
       validateMenuButton(input.menuButton);
       return request("setChatMenuButton", input, options);
     },
-    /** Delete one stored message. */
     async deleteMessage(
       input: { conversationId: Identifier; messageId: Identifier },
       options?: RequestOptions,
@@ -275,7 +279,6 @@ export function createBotClient(
       id(input.messageId, true);
       return request("deleteMessage", input, options);
     },
-    /** Read configured commands. */
     getCommands: (options?: RequestOptions) =>
       request("getCommands", undefined, options),
     /** Replace configured commands. An empty array removes them. */
@@ -336,5 +339,4 @@ export function createBotClient(
     },
   };
 }
-/** The ready client returned by {@link createBotClient}. */
 export type BotClient = ReturnType<typeof createBotClient>;

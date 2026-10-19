@@ -1,6 +1,6 @@
 import { interactionUpdate } from "./interactions.js";
 import { wireReplyMarkup, wireMenuButton } from "./keyboard.js";
-import { mediaRequest, albumRequest } from "./media.js";
+import { mediaRequest, albumRequest, wireSendOptions } from "./media.js";
 import { downloadFileStream } from "./download.js";
 import { httpFailure, positiveInteger, retryAfter } from "./failure.js";
 import {
@@ -11,6 +11,8 @@ import {
 } from "../errors.js";
 import {
   validateReplyMarkup,
+  validateChatAction,
+  validateIdentifier,
   validateMenuButton,
   validateCaption,
   validateVideo,
@@ -341,6 +343,15 @@ function wireRequest<K extends keyof BotOperations>(
         method: "getFile",
         body: { file_id: (input as BotOperations["getFile"]["input"]).fileId },
       };
+    case "sendChatAction": {
+      const value = input as BotOperations["sendChatAction"]["input"];
+      validateChatAction(value?.action);
+      validateIdentifier(value.conversationId);
+      return {
+        method: "sendChatAction",
+        body: { chat_id: value.conversationId, action: value.action },
+      };
+    }
     case "sendMessage": {
       const value = input as BotOperations["sendMessage"]["input"];
       return {
@@ -348,6 +359,7 @@ function wireRequest<K extends keyof BotOperations>(
         body: {
           chat_id: value.conversationId,
           text: value.text,
+          ...wireSendOptions(value),
           ...(value.replyMarkup !== undefined
             ? { reply_markup: wireReplyMarkup(value.replyMarkup) }
             : {}),
@@ -562,6 +574,7 @@ function normalizeResult<K extends keyof BotOperations>(
       };
       break;
     }
+    case "sendChatAction":
     case "setChatMenuButton":
     case "answerCallback":
     case "deleteMessage":

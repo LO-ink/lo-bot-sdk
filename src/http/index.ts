@@ -206,11 +206,16 @@ function message(
   const chat = record(object?.chat);
   const id = identifier(object?.message_id, true);
   const conversationId = identifier(chat?.id);
+  const senderId = identifier(record(object?.from)?.id, true);
   if (
     !object ||
     !chat ||
     !id ||
     !conversationId ||
+    (object.from !== undefined &&
+      (!senderId ||
+        senderId.length > 19 ||
+        BigInt(senderId) > 2n ** 63n - 1n)) ||
     typeof object.date !== "number" ||
     !Number.isSafeInteger(object.date) ||
     object.date < 0 ||
@@ -228,6 +233,7 @@ function message(
   return {
     id,
     conversationId,
+    ...(senderId ? { senderId } : {}),
     ...(typeof object.text === "string" ? { text: object.text } : {}),
   };
 }
@@ -380,6 +386,22 @@ function wireRequest<K extends keyof BotOperations>(
         },
       };
     }
+    case "editReplyMarkup": {
+      const value = input as BotOperations["editReplyMarkup"]["input"];
+      validateIdentifier(value?.conversationId);
+      validateIdentifier(value.messageId, true);
+      if (value.replyMarkup === undefined)
+        throw configurationError("An inline keyboard is required.");
+      validateReplyMarkup(value.replyMarkup, value.conversationId, true);
+      return {
+        method: "editMessageReplyMarkup",
+        body: {
+          chat_id: value.conversationId,
+          message_id: value.messageId,
+          reply_markup: wireReplyMarkup(value.replyMarkup),
+        },
+      };
+    }
     case "setChatMenuButton": {
       const value = input as BotOperations["setChatMenuButton"]["input"];
       validateMenuButton(value.menuButton);
@@ -527,6 +549,16 @@ function normalizeResult<K extends keyof BotOperations>(
       const edit = input as BotOperations["editMessage"]["input"];
       result = message(value, edit.conversationId, true);
       if (result.id !== edit.messageId) throw invalidResult();
+      break;
+    }
+    case "editReplyMarkup": {
+      const edit = input as BotOperations["editReplyMarkup"]["input"];
+      result = incomingMessage(value);
+      if (
+        result.id !== edit.messageId ||
+        result.conversationId !== edit.conversationId
+      )
+        throw invalidResult();
       break;
     }
     case "sendPhoto":

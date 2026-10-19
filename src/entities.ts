@@ -19,10 +19,11 @@ export interface BotIdentity {
   /** Installation features, when advertised by the server. Absence means unknown. */
   readonly capabilities?: BotCapabilities;
 }
-/** A stored text message returned by a bot operation. */
+/** A stored message returned by a bot operation or update. */
 export interface Message {
   readonly id: Identifier;
   readonly conversationId: Identifier;
+  readonly senderId?: Identifier;
   readonly text?: string;
   readonly caption?: string;
   /** Reusable reference belonging to this bot; cache after a successful upload. */

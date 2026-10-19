@@ -152,6 +152,18 @@ export function createBotClient(
       validateReplyMarkup(input.replyMarkup, input.conversationId, true);
       return request("editMessage", input, options);
     },
+    async editReplyMarkup(
+      input: BotOperations["editReplyMarkup"]["input"],
+      options?: RequestOptions,
+    ) {
+      object(input);
+      id(input.conversationId);
+      id(input.messageId, true);
+      if (input.replyMarkup === undefined)
+        throw new BotError("invalid-input", "An inline keyboard is required.");
+      validateReplyMarkup(input.replyMarkup, input.conversationId, true);
+      return request("editReplyMarkup", input, options);
+    },
     async sendPhoto(
       input: BotOperations["sendPhoto"]["input"],
       options?: RequestOptions,

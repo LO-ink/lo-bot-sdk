@@ -315,7 +315,7 @@ Video defaults to a 90-second request deadline because transcoding can wait 45 s
 
 Call `await bot.getCapabilities()` at startup and before jobs that depend on installation features. Results refresh on demand after five minutes; `getCapabilities({refresh: true})` bypasses the cache. `undefined` on older servers means unknown. Bot permissions remain separate identity fields. No background polling or timers are installed.
 
-Incoming updates distinguish ordinary messages, callback buttons and `appData` events. App data from older LO installations may omit a stored message ID; the event retains its real update cursor and conversation. Treat `data` as user input, and verify signed launch data separately for application authorization. Incoming media messages also expose `mediaType` and a reusable `fileId` when available. Cache references per bot. Reply keyboards can be cleared with `{removeKeyboard: true}`.
+Incoming updates distinguish ordinary messages, callback buttons and `appData` events. Ordinary messages expose `senderId` when the server identifies their author; it may be absent. App data from older LO installations may omit a stored message ID; the event retains its real update cursor and conversation. Treat `data` as user input, and verify signed launch data separately for application authorization. Incoming media messages also expose `mediaType` and a reusable `fileId` when available. Cache references per bot. Reply keyboards can be cleared with `{removeKeyboard: true}`.
 
 ```ts
 for (const update of await bot.getUpdates()) {
@@ -323,6 +323,16 @@ for (const update of await bot.getUpdates()) {
     await bot.answerCallback({ callbackId: update.callback.id, text: "Done" });
   }
 }
+```
+
+`editReplyMarkup` changes an existing message's inline buttons without resending its text or media. Custom `BotTransport` implementations must handle this operation in SDK 0.8. Pass an empty keyboard to remove them:
+
+```ts
+const message = await bot.editReplyMarkup({
+  conversationId: "42",
+  messageId: "7",
+  replyMarkup: { inlineKeyboard: [] },
+});
 ```
 
 Download paths include signed LO media references returned by `getFile`. Pass the returned path unchanged to `downloadFile`; it stays on the authenticated file route. URLs and traversal are refused.

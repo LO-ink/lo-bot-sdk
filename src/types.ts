@@ -166,6 +166,14 @@ export interface BotOperations {
     };
     output: Message;
   };
+  editReplyMarkup: {
+    input: {
+      conversationId: Identifier;
+      messageId: Identifier;
+      replyMarkup: InlineKeyboard;
+    };
+    output: Message;
+  };
   deleteMessage: {
     input: { conversationId: Identifier; messageId: Identifier };
     output: boolean;

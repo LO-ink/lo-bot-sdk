@@ -111,9 +111,15 @@ void native.sendVoice({conversationId:'1', voice:{fileId:'voice'}, ...sendOption
 void native.sendVideo({conversationId:'1', video:{fileId:'video'}, ...sendOptions});
 void native.sendAudio({conversationId:'1', audio:{fileId:'audio'}, ...sendOptions});
 void native.sendMediaGroup({conversationId:'1', media:[{type:'photo',media:{fileId:'one'}},{type:'photo',media:{fileId:'two'}}], ...sendOptions});
+const edited: Promise<import('${name}').Message> = native.editReplyMarkup({conversationId:'1', messageId:'2', replyMarkup:{inlineKeyboard:[]}});
+void edited.then(message => { const sender: string | undefined = message.senderId; return sender; });
+// @ts-expect-error A keyboard edit requires an explicit inline keyboard.
+void native.editReplyMarkup({conversationId:'1', messageId:'2'});
+// @ts-expect-error Reply keyboards cannot be edited on stored messages.
+void native.editReplyMarkup({conversationId:'1', messageId:'2', replyMarkup:{removeKeyboard:true}});
 const operations: Record<keyof BotOperations, true> = {
   getIdentity:true, answerCallback:true, sendChatAction:true, sendMessage:true,
-  editMessage:true, deleteMessage:true, sendPhoto:true, sendDocument:true,
+  editMessage:true, editReplyMarkup:true, deleteMessage:true, sendPhoto:true, sendDocument:true,
   sendVoice:true, sendVideo:true, sendAudio:true, sendMediaGroup:true, getFile:true,
   downloadFile:true, setChatMenuButton:true, getCommands:true, setCommands:true,
   getUpdates:true,

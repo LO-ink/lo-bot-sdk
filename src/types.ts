@@ -53,7 +53,24 @@ export type InputFile =
       readonly mime?: string;
       readonly fileId?: never;
     };
-export interface MediaInput {
+export interface SendOptions {
+  replyToMessageId?: Identifier;
+  allowSendingWithoutReply?: boolean;
+  disableNotification?: boolean;
+}
+export type ChatAction =
+  | "typing"
+  | "choose_sticker"
+  | "find_location"
+  | "record_voice"
+  | "upload_voice"
+  | "record_video"
+  | "record_video_note"
+  | "upload_photo"
+  | "upload_video"
+  | "upload_document"
+  | "upload_video_note";
+export interface MediaInput extends SendOptions {
   conversationId: Identifier;
   replyMarkup?: ReplyMarkup;
 }
@@ -128,8 +145,12 @@ export type BotUpdate =
 export interface BotOperations {
   getIdentity: { input: undefined; output: BotIdentity };
   answerCallback: { input: CallbackAnswer; output: boolean };
+  sendChatAction: {
+    input: { conversationId: Identifier; action: ChatAction };
+    output: boolean;
+  };
   sendMessage: {
-    input: {
+    input: SendOptions & {
       conversationId: Identifier;
       text: string;
       replyMarkup?: ReplyMarkup;
@@ -173,7 +194,10 @@ export interface BotOperations {
     output: Message & { readonly fileId: string };
   };
   sendMediaGroup: {
-    input: { conversationId: Identifier; media: readonly AlbumItem[] };
+    input: SendOptions & {
+      conversationId: Identifier;
+      media: readonly AlbumItem[];
+    };
     output: readonly (Message & { readonly fileId: string })[];
   };
   getFile: { input: { fileId: string }; output: BotFile };

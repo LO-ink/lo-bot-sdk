@@ -1,7 +1,34 @@
 import { wireReplyMarkup } from "./keyboard.js";
-import { BOT_MEDIA_LIMITS, validateInputFile } from "../validation.js";
+import {
+  BOT_MEDIA_LIMITS,
+  validateInputFile,
+  validateSendOptions,
+} from "../validation.js";
 import { BotError } from "../errors.js";
-import { type BotOperations, type InputFile } from "../types.js";
+import {
+  type BotOperations,
+  type InputFile,
+  type SendOptions,
+} from "../types.js";
+
+export function wireSendOptions(input: SendOptions): Record<string, unknown> {
+  validateSendOptions(input);
+  return {
+    ...(input.replyToMessageId !== undefined
+      ? {
+          reply_parameters: {
+            message_id: Number(input.replyToMessageId),
+            ...(input.allowSendingWithoutReply !== undefined
+              ? { allow_sending_without_reply: input.allowSendingWithoutReply }
+              : {}),
+          },
+        }
+      : {}),
+    ...(input.disableNotification !== undefined
+      ? { disable_notification: input.disableNotification }
+      : {}),
+  };
+}
 
 /** Buffer streams within the platform cap before fetch; never send a partial oversized upload. */
 export async function fileBlob(
@@ -93,6 +120,7 @@ export async function mediaRequest(
   validateInputFile(file, kind);
   const fields: Record<string, unknown> = {
     chat_id: value.conversationId,
+    ...wireSendOptions(input),
     ...(value.caption !== undefined ? { caption: value.caption } : {}),
     ...(value.replyMarkup !== undefined
       ? { reply_markup: wireReplyMarkup(value.replyMarkup) }
@@ -133,6 +161,7 @@ export async function albumRequest(
   input: BotOperations["sendMediaGroup"]["input"],
   signal: AbortSignal,
 ): Promise<Record<string, unknown> | FormData> {
+  const fields = { chat_id: input.conversationId, ...wireSendOptions(input) };
   const uploads: Array<{ name: string; blob: Blob; filename: string }> = [];
   const media = [];
   for (let i = 0; i < input.media.length; i++) {
@@ -156,9 +185,10 @@ export async function albumRequest(
       ...(item.caption !== undefined ? { caption: item.caption } : {}),
     });
   }
-  if (!uploads.length) return { chat_id: input.conversationId, media };
+  if (!uploads.length) return { ...fields, media };
   const form = new FormData();
-  form.append("chat_id", input.conversationId);
+  for (const [key, value] of Object.entries(fields))
+    form.append(key, typeof value === "string" ? value : JSON.stringify(value));
   form.append("media", JSON.stringify(media));
   for (const upload of uploads)
     form.append(upload.name, upload.blob, upload.filename);

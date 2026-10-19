@@ -62,6 +62,8 @@ export type {
   ChatMenuButton,
   InputFile,
   MediaInput,
+  SendOptions,
+  ChatAction,
   VideoInput,
   AlbumItem,
   BotFile,

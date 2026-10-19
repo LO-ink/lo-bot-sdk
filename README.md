@@ -7,6 +7,7 @@ A typed server-side bot client. The client owns input validation, deadlines and 
 - Read bot identity and configured commands.
 - Acknowledge callback button actions.
 - Send, edit and delete plain-text messages.
+- Reply to messages, send silently, and report typing or media activity.
 - Send photos, documents, AAC voice messages and videos by upload or cached file ID.
 - Send audio by file ID and homogeneous photo/document albums.
 - Resolve file metadata and download a bounded byte stream.
@@ -14,7 +15,7 @@ A typed server-side bot client. The client owns input validation, deadlines and 
 - Replace the command list.
 - Poll normalized updates with an explicit processing cursor.
 
-The client surface is not the complete server API. Advanced server methods are outside this client surface. The SDK provides lossless LO webhook parsing; the application must authenticate each webhook first. Unrecognized polled updates are represented as `kind: 'unhandled'` with their cursor; callers must decide how to handle them before advancing the offset.
+The client covers a subset of the server API. Unrecognized polled updates retain their cursor as `kind: 'unhandled'`; handle them before advancing the offset.
 
 ## Usage
 
@@ -31,10 +32,9 @@ const bot = createLoBotClient({ token });
 const identity = await bot.getIdentity();
 ```
 
-`createLoSecretaryClient(options)` provides the native secretary extension.
-`createLoHttpBotTransport(options)` is available for explicitly shared transport
-ownership. `createBotClient(transport)` and `createSecretaryClient(transport)`
-remain unchanged for injected transports.
+Use `createLoSecretaryClient(options)` for the secretary extension. For shared
+transport ownership, pass `createLoHttpBotTransport(options)` to
+`createBotClient(transport)` and `createSecretaryClient(transport)`.
 
 The native HTTP implementation owns bounded responses/downloads, lossless IDs,
 wire serialization and credential redaction. It never retries a mutation after
@@ -47,24 +47,36 @@ The client does not retry sends: a network failure can occur after the server st
 
 Credentials must stay on the application server. Do not bundle this package or a bot transport with browser applications.
 
-## Development
+## Replies and chat activity
 
-```sh
-npm ci
-npm run check
-npm test
-npm pack --dry-run
+```ts
+await bot.sendMessage({
+  conversationId: verifiedUserId,
+  text: "Your result is ready",
+  replyToMessageId: receivedMessage.id,
+  disableNotification: true,
+});
+await bot.sendChatAction({ conversationId: verifiedUserId, action: "typing" });
 ```
 
-Native HTTP transport tests run with the client tests and packed-package checks.
+Text, media and album sends share `SendOptions`. `replyToMessageId` is a decimal
+string from 1 to 2147483647 in the same conversation. Set
+`allowSendingWithoutReply: true` to send if that target is missing; it has no
+effect without a reply ID. Replies do not support quoted fragments or another
+conversation. `disableNotification` controls notification sound.
+
+`ChatAction` accepts `typing`, `choose_sticker`, `find_location`, `record_voice`,
+`upload_voice`, `record_video`, `record_video_note`, `upload_photo`, `upload_video`,
+`upload_document` and `upload_video_note`. Each call sends one action; the SDK does
+not start a timer or retry it. Custom `BotTransport` implementations must handle
+the new `sendChatAction` operation in SDK 0.7.
 
 ## LO-native secretary extension
 
 `createSecretaryClient` uses a separate `SecretaryTransport` extension. Existing
 ordinary transports continue implementing `BotTransport` alone. Normalized
-`BotUpdate` now also includes `secretary_connection`, `secretary_message`,
-`secretary_message_edited` and `secretary_messages_deleted`; update exhaustive
-switches when upgrading from 0.1.
+`BotUpdate` includes `secretary_connection`, `secretary_message`,
+`secretary_message_edited` and `secretary_messages_deleted`.
 
 Enable the bot's secretary capability explicitly in LO bot management. A human
 owner must then select that bot, permitted private chats, and individual rights
@@ -139,18 +151,13 @@ never generate a replacement key. `BotError.code` classifies `forbidden`,
 `conflict`, `invalid-input`, `rate-limited`, `timeout`, `aborted` and transport
 failures. Respect `retryAfterSeconds`; do not log upstream bodies or credentials.
 
-Examples written for the retired native review workflow are not compatible with
-SDK 0.6.0. Do not replay their pending jobs as sends. Bot-owned proposals need
-their own persisted approval and replay handling as described above. Secretary
-rights apply only to the LO connection and owner consent recorded by the server.
-
 Secretary messages may include `caption`, `attachments`, `albumId` and
 `mediaStatus`. Supported incoming files use `secretary-v1` read capabilities
 bound to their connection, chat, policy and exact source revision. `getFile(fileId)`
 returns a relative `path` and `expiresAt`; download from the Bot API's authenticated
 `/file/bot<TOKEN>/<path>` route using `bot.downloadFile({ path: file.path })`,
-where `bot` and the Secretary client share the same transport. Each GET checks current consent again. URLs last
-five minutes and downloads are capped at 50 MiB. File references cannot be used as
+where `bot` and the Secretary client share the same transport. Each GET checks
+current consent again. URLs last five minutes and downloads are capped at 50 MiB. File references cannot be used as
 ordinary bot media grants. `unsupported` and `unavailable` media statuses carry no
 usable file grant.
 
@@ -173,10 +180,9 @@ receive a typed unsupported response.
 
 ### Bot-owned replies and native templates
 
-SDK 0.6 removes `proposeDraft`, the `SecretaryDraft` type and the native proposal
-transport operation. `sendMessageDraft` is a separate ordinary progress API and
-is unchanged. Bots store and manage their own proposals, authenticated owner
-approvals, cancellation, expiry and recovery. Use delegated `sendText` only after
+Native `proposeDraft` and `SecretaryDraft` are retired; do not replay their pending
+jobs as sends. Bots manage their own proposals, authenticated owner approvals,
+cancellation, expiry and recovery. Use delegated `sendText` only after
 the bot's approval policy permits that exact persisted reply; the server checks
 current permission and source context again.
 
@@ -303,11 +309,9 @@ Video metadata and thumbnails apply only to uploads. Video uploads depend on the
 
 Video defaults to a 90-second request deadline because transcoding can wait 45 seconds. An explicit client or request deadline takes precedence. Other calls retain their 35-second default. File downloads stay on the authenticated LO file route, refuse redirects and stop at 50 MiB by default. A missing `path` means this media has no direct downloadable file. Download refusals use the same HTTP error categories as API calls, including `unauthenticated` for 401, `RateLimited` for 429 and `unsupported` for 501. Valid positive integer `Retry-After` headers provide retry guidance; error bodies and credential URLs are never exposed, and downloads are not retried automatically.
 
-`getIdentity()` exposes group-reading and inline-query flags. `capabilities` is optional: absence means unknown, never disabled. Installation features must be discovered or refreshed by the transport/application.
+`getIdentity()` exposes group-reading and inline-query flags separately from installation capabilities.
 
 `BotApiError.details` carries structured `parameter` and `reason` when provided. Server descriptions are classified only in the native HTTP transport. `retryRejected(() => bot.sendVideo(input))` is opt-in and retries once after an explicit 429 refusal marked `safeToRetry`, within `maxWaitSeconds` (30 by default). It never retries network failures or uncertain outcomes. The operation must create a fresh stream for each attempt or use replayable bytes/Blob.
-
-Version 0.4 uses native LO keyboard fields (`inlineKeyboard`, `callbackData`, `miniApp`, `resize`, `oneTime`, `persistent`, `placeholder`). Menu app buttons use `type: "miniApp"`. The included HTTP transport owns server serialization. Update older keyboard objects when upgrading the SDK.
 
 Call `await bot.getCapabilities()` at startup and before jobs that depend on installation features. Results refresh on demand after five minutes; `getCapabilities({refresh: true})` bypasses the cache. `undefined` on older servers means unknown. Bot permissions remain separate identity fields. No background polling or timers are installed.
 
@@ -328,16 +332,8 @@ Download paths include signed LO media references returned by `getFile`. Pass th
 Run `make install` and `make ci` with Node.js 22.13 or newer. The same targets run
 in GitHub Actions. CI checks formatting, ESLint (including typed promises),
 TypeScript, dependency cycles and package boundaries, tests, published package
-contents, vulnerable dependencies and secrets. English documentation and comments
-are enforced; unfinished development notes and retired repository URLs fail CI.
+contents, vulnerable dependencies and secrets. Documentation and comments must be English.
 
-Coverage includes unimported production files and fails below 90% lines and
-statements, 90% functions, or 80% branches. Reports are uploaded as CI artifacts.
-
-Compiled modules containing only TypeScript type exports have no executable
-behavior and are excluded from coverage. Runtime modules are all included.
-
-Repository policy checks require Python 3 for Python comment tokenization. YAML
-comments are parsed as YAML; embedded scripts and localized scalar values retain
-their own language. LO credentials are checked by the root Gitleaks configuration
-and a synthetic scanner regression before each repository scan.
+Coverage includes all runtime modules and fails below 90% lines, statements and
+functions, or 80% branches. Reports are uploaded as CI artifacts. Policy checks
+require Python 3; secret scanning uses the repository Gitleaks configuration.

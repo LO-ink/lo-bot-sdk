@@ -96,6 +96,43 @@ const retiredOperation: keyof SecretaryOperations = 'proposeDraft';
 void retiredOperation;
 `,
   );
+  await writeFile(
+    join(consumer, "check.ts"),
+    `${await readFile(join(consumer, "check.ts"), "utf8")}
+import type { SendOptions, ChatAction, BotOperations } from '${name}';
+const sendOptions: SendOptions = {replyToMessageId: '2147483647', allowSendingWithoutReply: false, disableNotification: true};
+const action: ChatAction = 'upload_video_note';
+const activity: Promise<boolean> = native.sendChatAction({conversationId:'1', action});
+void activity;
+void native.sendMessage({conversationId:'1', text:'Reply', ...sendOptions});
+void native.sendPhoto({conversationId:'1', photo:{fileId:'photo'}, ...sendOptions});
+void native.sendDocument({conversationId:'1', document:{fileId:'doc'}, ...sendOptions});
+void native.sendVoice({conversationId:'1', voice:{fileId:'voice'}, ...sendOptions});
+void native.sendVideo({conversationId:'1', video:{fileId:'video'}, ...sendOptions});
+void native.sendAudio({conversationId:'1', audio:{fileId:'audio'}, ...sendOptions});
+void native.sendMediaGroup({conversationId:'1', media:[{type:'photo',media:{fileId:'one'}},{type:'photo',media:{fileId:'two'}}], ...sendOptions});
+const operations: Record<keyof BotOperations, true> = {
+  getIdentity:true, answerCallback:true, sendChatAction:true, sendMessage:true,
+  editMessage:true, deleteMessage:true, sendPhoto:true, sendDocument:true,
+  sendVoice:true, sendVideo:true, sendAudio:true, sendMediaGroup:true, getFile:true,
+  downloadFile:true, setChatMenuButton:true, getCommands:true, setCommands:true,
+  getUpdates:true,
+};
+const customTransport: BotTransport = {async execute(operation, input) {
+  void operations[operation]; void input; throw new Error('fixture');
+}};
+void createBotClient(customTransport).sendChatAction({conversationId:'1', action:'typing'});
+// @ts-expect-error IDs stay decimal strings in the public API.
+const numericReply: SendOptions = {replyToMessageId: 1};
+// @ts-expect-error Unsupported chat actions cannot be sent.
+void native.sendChatAction({conversationId:'1', action:'unknown'});
+// @ts-expect-error Ordinary replies have no quote options.
+const quotedReply: SendOptions = {replyToMessageId:'1', quote:'fragment'};
+// @ts-expect-error Ordinary replies stay in their target conversation.
+const crossChatReply: SendOptions = {replyToMessageId:'1', replyChatId:'2'};
+void numericReply; void quotedReply; void crossChatReply;
+`,
+  );
   for (const resolution of ["NodeNext", "Bundler"]) {
     run(
       process.execPath,

@@ -467,7 +467,11 @@ async function responseText(response: Response): Promise<string> {
     if (done) break;
     size += value.byteLength;
     if (size > maxResponseBytes) {
-      await reader.cancel();
+      try {
+        await reader.cancel();
+      } catch {
+        // Preserve the size-limit failure if stream cleanup fails.
+      }
       throw new HttpBotError(
         "invalid-response",
         "LO Bot API response exceeded the size limit.",

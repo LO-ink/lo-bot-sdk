@@ -474,6 +474,31 @@ test("redirect body cleanup cannot expose transport details", async () => {
   );
 });
 
+test("oversized response retains its error category when stream cleanup fails", async () => {
+  const fetch = async () =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array((2 << 20) + 1));
+        },
+        cancel() {
+          throw new Error(`cleanup ${token}`);
+        },
+      }),
+      { status: 200 },
+    );
+  await assert.rejects(
+    createBotClient(createLoHttpBotTransport({ token, fetch })).getCommands(),
+    (error) => {
+      assert.ok(error instanceof HttpBotError);
+      assert.equal(error.code, "invalid-response");
+      assert.equal(error.status, 200);
+      assert.equal(String(error).includes(token), false);
+      return true;
+    },
+  );
+});
+
 test("edit responses must identify the requested message and conversation", async (t) => {
   for (const [messageId, chatId] of [
     [999, 7],

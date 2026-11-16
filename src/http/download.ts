@@ -115,7 +115,7 @@ export async function downloadFileStream(
     async cancel() {
       finished = true;
       try {
-        await reader.cancel();
+        await reader.cancel().catch(() => {});
       } finally {
         release();
       }

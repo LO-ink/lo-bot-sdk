@@ -174,6 +174,23 @@ test("download cancellation cancels the underlying producer", async () => {
   await stream.cancel();
   assert.equal(cancelled, 1);
 });
+test("download cancellation does not expose producer errors", async () => {
+  let cancelled = 0;
+  const bot = client(
+    () =>
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled++;
+            throw new Error(`private URL https://api.lo.ink/file/bot${token}`);
+          },
+        }),
+      ),
+  );
+  const stream = await bot.downloadFile({ path: "fixture" });
+  await assert.doesNotReject(stream.cancel());
+  assert.equal(cancelled, 1);
+});
 test("descriptions never fabricate structured reasons; explicit fields are preserved", async () => {
   for (const [description] of [
     [
